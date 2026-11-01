@@ -1,0 +1,28 @@
+{
+  "name": "eventflow",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @eventflow/web",
+    "build": "npm run build -w @eventflow/web",
+    "preview": "npm run preview -w @eventflow/web",
+    "desktop": "npm run build && npm run start -w @eventflow/desktop",
+    "desktop:dev": "npm run dev -w @eventflow/desktop",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

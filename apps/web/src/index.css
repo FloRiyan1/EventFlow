@@ -1,0 +1,44 @@
+@import '@xyflow/react/dist/style.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom canvas & swimlane styling */
+.react-flow__background {
+  background-color: #f8fafc;
+}
+.dark .react-flow__background {
+  background-color: #0b0f19;
+}
+
+/* Custom handles */
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background-color: #3b82f6;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.3);
+  background-color: #60a5fa;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
