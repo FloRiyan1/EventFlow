@@ -43,7 +43,7 @@ export const UserActionNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative w-full h-full min-w-[100px] min-h-[36px] px-3.5 py-2 rounded-full shadow-lg transition-all duration-200 border flex items-center justify-center gap-2 ${
+      className={`relative w-full h-full min-w-[100px] min-h-[36px] px-3.5 py-2 rounded-full shadow-lg border flex items-center justify-center gap-2 ${
         selected ? 'border-white ring-2 ring-amber-400' : 'border-amber-400 hover:border-amber-300'
       } bg-[#FFC21A] text-slate-950 font-bold text-xs tracking-tight select-none`}
       style={{ width: '100%', height: '100%' }}

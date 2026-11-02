@@ -296,6 +296,279 @@ export function modelUsages(p: Project, modelId: string): ModelUsages {
   };
 }
 
+export interface ModelHierarchyInfo {
+  model: Model;
+  isRoot: boolean;
+  subModels: { field: Field; model: Model }[];
+  parentModels: Model[];
+}
+
+export function getModelHierarchyInfo(p: Project, modelId: string): ModelHierarchyInfo {
+  const model = p.models.find((m) => m.id === modelId);
+  if (!model) throw new Error(`Model ${modelId} nicht gefunden`);
+
+  const modelMap = new Map(p.models.map((m) => [m.name, m]));
+
+  const subModels: { field: Field; model: Model }[] = [];
+  for (const f of model.fields) {
+    const refs = referencedTypeNames(f.type);
+    for (const refName of refs) {
+      const target = modelMap.get(refName);
+      if (target) {
+        subModels.push({ field: f, model: target });
+      }
+    }
+  }
+
+  const parentModels = p.models.filter(
+    (other) => other.id !== model.id && other.fields.some((f) => referencedTypeNames(f.type).includes(model.name))
+  );
+
+  return {
+    model,
+    isRoot: parentModels.length === 0,
+    subModels,
+    parentModels,
+  };
+}
+
+export interface InsertModelWithSubModelsOptions {
+  basePosition?: { x: number; y: number };
+  spacingX?: number;
+  spacingY?: number;
+}
+
+export interface InsertedHierarchyResult {
+  rootNodeId: string;
+  createdNodeIds: string[];
+  createdEdgeIds: string[];
+}
+
+export function insertModelWithSubModels(
+  board: Board,
+  p: Project,
+  rootModelId: string,
+  options: InsertModelWithSubModelsOptions = {}
+): InsertedHierarchyResult {
+  const rootModel = p.models.find((m) => m.id === rootModelId);
+  if (!rootModel) throw new Error(`Model ${rootModelId} nicht gefunden`);
+
+  const basePos = options.basePosition ?? { x: 300, y: 600 };
+  const spacingX = options.spacingX ?? 340;
+  const spacingY = options.spacingY ?? 260;
+
+  const createdNodeIds: string[] = [];
+  const createdEdgeIds: string[] = [];
+
+  const rootNodeId = uid('n_');
+  board.nodes.push({
+    id: rootNodeId,
+    kind: 'model',
+    modelId: rootModel.id,
+    position: { x: Math.round(basePos.x), y: Math.round(basePos.y) },
+  });
+  createdNodeIds.push(rootNodeId);
+
+  const modelMap = new Map(p.models.map((m) => [m.name, m]));
+  const visitedModelIds = new Set<string>([rootModel.id]);
+  const modelToNodeMap = new Map<string, string>([[rootModel.id, rootNodeId]]);
+
+  interface QueueItem {
+    model: Model;
+    parentNodeId: string;
+    fieldName: string;
+    level: number;
+  }
+
+  const queue: QueueItem[] = [];
+  for (const field of rootModel.fields) {
+    const refs = referencedTypeNames(field.type);
+    for (const refName of refs) {
+      const child = modelMap.get(refName);
+      if (child) {
+        queue.push({
+          model: child,
+          parentNodeId: rootNodeId,
+          fieldName: field.name,
+          level: 1,
+        });
+      }
+    }
+  }
+
+  const levelCounts = new Map<number, number>();
+
+  while (queue.length > 0) {
+    const item = queue.shift()!;
+    let childNodeId = modelToNodeMap.get(item.model.id);
+
+    if (!childNodeId) {
+      visitedModelIds.add(item.model.id);
+      childNodeId = uid('n_');
+      modelToNodeMap.set(item.model.id, childNodeId);
+
+      const countInLevel = levelCounts.get(item.level) || 0;
+      levelCounts.set(item.level, countInLevel + 1);
+
+      const posX = basePos.x + item.level * spacingX;
+      const posY = basePos.y + countInLevel * spacingY;
+
+      board.nodes.push({
+        id: childNodeId,
+        kind: 'model',
+        modelId: item.model.id,
+        position: { x: Math.round(posX), y: Math.round(posY) },
+      });
+      createdNodeIds.push(childNodeId);
+
+      for (const field of item.model.fields) {
+        const refs = referencedTypeNames(field.type);
+        for (const refName of refs) {
+          const grandChild = modelMap.get(refName);
+          if (grandChild && !visitedModelIds.has(grandChild.id)) {
+            queue.push({
+              model: grandChild,
+              parentNodeId: childNodeId,
+              fieldName: field.name,
+              level: item.level + 1,
+            });
+          }
+        }
+      }
+    }
+
+    const edgeId = uid('e_');
+    board.edges.push({
+      id: edgeId,
+      source: item.parentNodeId,
+      target: childNodeId,
+      sourceHandle: null,
+      targetHandle: null,
+      kind: 'flow',
+      label: item.fieldName,
+    });
+    createdEdgeIds.push(edgeId);
+  }
+
+  return { rootNodeId, createdNodeIds, createdEdgeIds };
+}
+
+export function insertSubModelsForNode(
+  board: Board,
+  p: Project,
+  parentNodeId: string,
+  options: InsertModelWithSubModelsOptions = {}
+): { createdNodeIds: string[]; createdEdgeIds: string[] } {
+  const parentNode = board.nodes.find((n) => n.id === parentNodeId);
+  if (!parentNode || parentNode.kind !== 'model') {
+    return { createdNodeIds: [], createdEdgeIds: [] };
+  }
+
+  const parentModel = p.models.find((m) => m.id === parentNode.modelId);
+  if (!parentModel) return { createdNodeIds: [], createdEdgeIds: [] };
+
+  const basePos = options.basePosition ?? parentNode.position;
+  const spacingX = options.spacingX ?? 340;
+  const spacingY = options.spacingY ?? 260;
+
+  const createdNodeIds: string[] = [];
+  const createdEdgeIds: string[] = [];
+
+  const modelMap = new Map(p.models.map((m) => [m.name, m]));
+  const visitedModelIds = new Set<string>([parentModel.id]);
+  const modelToNodeMap = new Map<string, string>([[parentModel.id, parentNode.id]]);
+
+  for (const node of board.nodes) {
+    if (node.kind === 'model') {
+      modelToNodeMap.set(node.modelId, node.id);
+    }
+  }
+
+  interface QueueItem {
+    model: Model;
+    parentNodeId: string;
+    fieldName: string;
+    level: number;
+  }
+
+  const queue: QueueItem[] = [];
+  for (const field of parentModel.fields) {
+    const refs = referencedTypeNames(field.type);
+    for (const refName of refs) {
+      const child = modelMap.get(refName);
+      if (child) {
+        queue.push({
+          model: child,
+          parentNodeId: parentNode.id,
+          fieldName: field.name,
+          level: 1,
+        });
+      }
+    }
+  }
+
+  const levelCounts = new Map<number, number>();
+
+  while (queue.length > 0) {
+    const item = queue.shift()!;
+    let childNodeId = modelToNodeMap.get(item.model.id);
+
+    if (!childNodeId) {
+      visitedModelIds.add(item.model.id);
+      childNodeId = uid('n_');
+      modelToNodeMap.set(item.model.id, childNodeId);
+
+      const countInLevel = levelCounts.get(item.level) || 0;
+      levelCounts.set(item.level, countInLevel + 1);
+
+      const posX = basePos.x + item.level * spacingX;
+      const posY = basePos.y + countInLevel * spacingY;
+
+      board.nodes.push({
+        id: childNodeId,
+        kind: 'model',
+        modelId: item.model.id,
+        position: { x: Math.round(posX), y: Math.round(posY) },
+      });
+      createdNodeIds.push(childNodeId);
+
+      for (const field of item.model.fields) {
+        const refs = referencedTypeNames(field.type);
+        for (const refName of refs) {
+          const grandChild = modelMap.get(refName);
+          if (grandChild && !visitedModelIds.has(grandChild.id)) {
+            queue.push({
+              model: grandChild,
+              parentNodeId: childNodeId,
+              fieldName: field.name,
+              level: item.level + 1,
+            });
+          }
+        }
+      }
+    }
+
+    const edgeExists = board.edges.some(
+      (e) => e.source === item.parentNodeId && e.target === childNodeId && e.label === item.fieldName
+    );
+    if (!edgeExists) {
+      const edgeId = uid('e_');
+      board.edges.push({
+        id: edgeId,
+        source: item.parentNodeId,
+        target: childNodeId,
+        sourceHandle: null,
+        targetHandle: null,
+        kind: 'flow',
+        label: item.fieldName,
+      });
+      createdEdgeIds.push(edgeId);
+    }
+  }
+
+  return { createdNodeIds, createdEdgeIds };
+}
+
 export interface EndpointUsages {
   boards: { id: string; name: string }[];
 }
@@ -327,3 +600,48 @@ export function componentUsages(p: Project, component: ComponentDef | string): C
   }
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Model field ordering and sorting
+// ---------------------------------------------------------------------------
+
+export type FieldSortCriterion = 'name-asc' | 'name-desc' | 'type-asc' | 'submodels-first' | 'required-first';
+
+export function reorderModelField(model: Model, fromIndex: number, toIndex: number): void {
+  if (fromIndex < 0 || fromIndex >= model.fields.length || toIndex < 0 || toIndex >= model.fields.length) {
+    return;
+  }
+  const [moved] = model.fields.splice(fromIndex, 1);
+  model.fields.splice(toIndex, 0, moved);
+}
+
+export function sortModelFields(p: Project, model: Model, criterion: FieldSortCriterion): void {
+  const modelNames = new Set(p.models.map((m) => m.name));
+
+  model.fields.sort((a, b) => {
+    switch (criterion) {
+      case 'name-asc':
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      case 'name-desc':
+        return b.name.localeCompare(a.name, undefined, { sensitivity: 'base' });
+      case 'type-asc':
+        return a.type.localeCompare(b.type) || a.name.localeCompare(b.name);
+      case 'required-first':
+        if (a.nullable !== b.nullable) {
+          return a.nullable ? 1 : -1;
+        }
+        return a.name.localeCompare(b.name);
+      case 'submodels-first': {
+        const aIsSub = referencedTypeNames(a.type).some((name) => modelNames.has(name));
+        const bIsSub = referencedTypeNames(b.type).some((name) => modelNames.has(name));
+        if (aIsSub !== bIsSub) {
+          return aIsSub ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      }
+      default:
+        return 0;
+    }
+  });
+}
+

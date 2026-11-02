@@ -40,7 +40,7 @@ export const FlowRefNode = memo(({ id, data, selected }: Props) => {
   return (
     <div
       onDoubleClick={handleNavigate}
-      className={`relative w-full h-full min-w-[180px] min-h-[70px] rounded-xl shadow-lg dark:shadow-xl transition-all duration-200 border flex flex-col justify-between bg-gradient-to-r from-purple-50 to-white dark:from-purple-950/90 dark:to-slate-900/90 backdrop-blur-md select-none group ${
+      className={`relative w-full h-full min-w-[180px] min-h-[70px] rounded-xl shadow-lg dark:shadow-xl border flex flex-col justify-between bg-gradient-to-r from-purple-50 to-white dark:from-purple-950/90 dark:to-slate-900/90 backdrop-blur-md select-none group ${
         selected
           ? 'border-purple-500 ring-2 ring-purple-400/50'
           : 'border-purple-200 dark:border-purple-500/50 hover:border-purple-400'

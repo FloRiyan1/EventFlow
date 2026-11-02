@@ -36,7 +36,7 @@ export const NoteNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative w-full h-full min-w-[140px] min-h-[90px] p-2.5 rounded-lg shadow-md transition-all duration-200 border flex flex-col ${
+      className={`relative w-full h-full min-w-[140px] min-h-[90px] p-2.5 rounded-lg shadow-md border flex flex-col ${
         selected
           ? 'border-amber-500 ring-2 ring-amber-400'
           : 'border-amber-200 dark:border-slate-600 hover:border-amber-400 dark:hover:border-slate-500'

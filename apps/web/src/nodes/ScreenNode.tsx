@@ -52,9 +52,9 @@ export const ScreenNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative rounded-xl shadow-xl transition-all duration-200 border ${
+      className={`relative rounded-xl shadow-xl border ${
         selected ? 'border-amber-400 ring-2 ring-amber-400' : 'border-slate-300 dark:border-slate-700/80 hover:border-slate-400 dark:hover:border-slate-500'
-      } bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 w-full h-full min-w-[160px] min-h-[200px] flex flex-col overflow-hidden transition-colors`}
+      } bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 w-full h-full min-w-[160px] min-h-[200px] flex flex-col overflow-hidden`}
       style={{ width: '100%', height: '100%' }}
     >
       <NodeResizer

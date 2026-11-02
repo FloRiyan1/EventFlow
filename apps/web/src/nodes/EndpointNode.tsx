@@ -163,7 +163,7 @@ export const EndpointNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative w-full h-full min-w-[200px] min-h-[80px] rounded-lg shadow-lg dark:shadow-xl transition-all duration-150 border flex flex-col ${
+      className={`relative w-full h-full min-w-[200px] min-h-[80px] rounded-lg shadow-lg dark:shadow-xl border flex flex-col ${
         selected ? 'border-white ring-2 ring-blue-500' : 'border-blue-400/50 hover:border-blue-300'
       } bg-[#0091FF] text-white group`}
     >

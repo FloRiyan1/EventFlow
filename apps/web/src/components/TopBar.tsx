@@ -21,16 +21,25 @@ import {
   Sun,
   Moon,
   Edit2,
+  FileCode,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 
 interface Props {
+  activeView?: 'flows' | 'models';
+  onSelectView?: (view: 'flows' | 'models') => void;
+  onOpenPlantUmlExport?: () => void;
+  onOpenPlantUmlModal?: (tab?: 'export' | 'import') => void;
   onEditModel: (modelId: string) => void;
   onEditEndpoint: (endpointId: string) => void;
   onPasteFromClipboard: () => void;
 }
 
 export const TopBar: React.FC<Props> = ({
+  activeView = 'flows',
+  onSelectView,
+  onOpenPlantUmlExport,
+  onOpenPlantUmlModal,
   onEditModel,
   onEditEndpoint,
   onPasteFromClipboard,
@@ -269,53 +278,89 @@ export const TopBar: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Middle: Canvas Add Buttons */}
-      <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-950/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-        <button
-          onClick={handleAddScreen}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1.5 transition-all"
-          title="Figma Screen einfügen (oder einfach Strg+V auf der Zeichenfläche!)"
-        >
-          <Smartphone className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-          <span>+ Screen</span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">(Strg+V)</span>
-        </button>
+      {/* Center: View Switcher & Canvas Add Buttons */}
+      <div className="flex items-center gap-2.5">
+        {/* View Switcher: Flows vs Datenmodelle */}
+        <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner">
+          <button
+            onClick={() => onSelectView?.('flows')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeView === 'flows'
+                ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+            title="Zu den Flow-Boards wechseln"
+          >
+            <Workflow className="w-3.5 h-3.5" />
+            <span>Flows</span>
+          </button>
+          <button
+            onClick={() => onSelectView?.('models')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeView === 'models'
+                ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+            title="Zur reinen Datenmodell-Ansicht mit allen Untermodellen wechseln"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Datenmodelle</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800/60 font-mono">
+              {project.models.length}
+            </span>
+          </button>
+        </div>
 
-        <button
-          onClick={handleAddEndpoint}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1.5 transition-all"
-          title="API Endpoint Block hinzufügen"
-        >
-          <Globe className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-          <span>+ API</span>
-        </button>
+        {/* Middle: Canvas Add Buttons (shown when in flows view) */}
+        {activeView === 'flows' && (
+          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-950/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+            <button
+              onClick={handleAddScreen}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1.5 transition-all"
+              title="Figma Screen einfügen (oder einfach Strg+V auf der Zeichenfläche!)"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+              <span>+ Screen</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">(Strg+V)</span>
+            </button>
 
-        <button
-          onClick={handleAddModel}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1.5 transition-all"
-          title="Model Block hinzufügen"
-        >
-          <Database className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
-          <span>+ Model</span>
-        </button>
+            <button
+              onClick={handleAddEndpoint}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1.5 transition-all"
+              title="API Endpoint Block hinzufügen"
+            >
+              <Globe className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+              <span>+ API</span>
+            </button>
 
-        <button
-          onClick={handleAddUserAction}
-          className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1 transition-all"
-          title="User Action Element hinzufügen"
-        >
-          <MousePointerClick className="w-3.5 h-3.5 text-yellow-500 dark:text-yellow-400" />
-          <span>+ Action</span>
-        </button>
+            <button
+              onClick={handleAddModel}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1.5 transition-all"
+              title="Model Block hinzufügen"
+            >
+              <Database className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
+              <span>+ Model</span>
+            </button>
 
-        <button
-          onClick={handleAddNote}
-          className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1 transition-all"
-          title="Notiz hinzufügen"
-        >
-          <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>+ Notiz</span>
-        </button>
+            <button
+              onClick={handleAddUserAction}
+              className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1 transition-all"
+              title="User Action Element hinzufügen"
+            >
+              <MousePointerClick className="w-3.5 h-3.5 text-yellow-500 dark:text-yellow-400" />
+              <span>+ Action</span>
+            </button>
+
+            <button
+              onClick={handleAddNote}
+              className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800/80 shadow-none hover:shadow-sm flex items-center gap-1 transition-all"
+              title="Notiz hinzufügen"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <span>+ Notiz</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Right: Actions, Undo/Redo, Persistence & Theme Toggle */}
@@ -361,6 +406,25 @@ export const TopBar: React.FC<Props> = ({
           )}
         </button>
 
+
+        {/* PlantUML Export & Import */}
+        <div className="flex items-center rounded-lg border border-purple-200 dark:border-purple-500/30 overflow-hidden shadow-sm">
+          <button
+            onClick={() => (onOpenPlantUmlModal ? onOpenPlantUmlModal('export') : onOpenPlantUmlExport?.())}
+            className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-600/20 hover:bg-purple-100 dark:hover:bg-purple-600/30 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-colors border-r border-purple-200 dark:border-purple-500/30"
+            title="Als PlantUML Diagramm exportieren"
+          >
+            <FileCode className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            <span>PlantUML</span>
+          </button>
+          <button
+            onClick={() => (onOpenPlantUmlModal ? onOpenPlantUmlModal('import') : onOpenPlantUmlExport?.())}
+            className="px-2 py-1.5 bg-purple-50 dark:bg-purple-600/20 hover:bg-purple-100 dark:hover:bg-purple-600/30 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+            title="PlantUML Importieren (Code einfügen oder .puml Datei laden)"
+          >
+            <span>Import</span>
+          </button>
+        </div>
 
         <button
           onClick={handleSaveProject}

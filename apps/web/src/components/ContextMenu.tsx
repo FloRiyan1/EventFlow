@@ -13,7 +13,11 @@ import {
   MousePointerClick,
   FileText,
   Plus,
+  Network,
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
 } from 'lucide-react';
+import type { AlignmentMode } from '@eventflow/core';
 
 export interface ContextMenuTarget {
   type: 'node' | 'pane' | 'edge';
@@ -22,6 +26,7 @@ export interface ContextMenuTarget {
   edgeId?: string;
   position: { x: number; y: number }; // Flow coordinates (x, y)
   selectedCount?: number;
+  hasSubModels?: boolean;
 }
 
 interface Props {
@@ -35,10 +40,12 @@ interface Props {
   onDelete: (nodeId?: string) => void;
   onDeleteEdge?: (edgeId: string) => void;
   onEdit?: (nodeId: string) => void;
+  onInsertSubModels?: (nodeId: string) => void;
   onCreateEndpoint?: (flowPos: { x: number; y: number }) => void;
   onCreateModel?: (flowPos: { x: number; y: number }) => void;
   onCreateUserAction?: (flowPos: { x: number; y: number }) => void;
   onCreateNote?: (flowPos: { x: number; y: number }) => void;
+  onAlign?: (mode: AlignmentMode) => void;
   hasClipboardContent: boolean;
 }
 
@@ -53,10 +60,12 @@ export const ContextMenu: React.FC<Props> = ({
   onDelete,
   onDeleteEdge,
   onEdit,
+  onInsertSubModels,
   onCreateEndpoint,
   onCreateModel,
   onCreateUserAction,
   onCreateNote,
+  onAlign,
   hasClipboardContent,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -200,6 +209,23 @@ export const ContextMenu: React.FC<Props> = ({
             </button>
           )}
 
+          {target.nodeKind === 'model' && onInsertSubModels && target.hasSubModels && (
+            <button
+              onClick={() => {
+                onInsertSubModels(target.nodeId!);
+                onClose();
+              }}
+              className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-orange-50 dark:hover:bg-orange-950/40 text-orange-700 dark:text-orange-300 transition-colors font-semibold"
+              title="Alle referenzierten Untermodelle auf diesem Canvas einfügen und automatisch verbinden"
+            >
+              <div className="flex items-center gap-2">
+                <Network className="w-3.5 h-3.5 text-orange-500" />
+                <span>Untermodelle einfügen & verbinden</span>
+              </div>
+              <Sparkles className="w-3.5 h-3.5 text-orange-500" />
+            </button>
+          )}
+
           <button
             onClick={() => {
               onCopy();
@@ -239,6 +265,38 @@ export const ContextMenu: React.FC<Props> = ({
               Strg+D
             </kbd>
           </button>
+
+          {target.selectedCount && target.selectedCount > 1 && onAlign && (
+            <>
+              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+              <button
+                onClick={() => {
+                  onAlign('centerH');
+                  onClose();
+                }}
+                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors"
+                title="Alle markierten Elemente an ihrer horizontalen Mitte ausrichten"
+              >
+                <div className="flex items-center gap-2">
+                  <AlignHorizontalJustifyCenter className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                  <span>Horizontal mittig ausrichten</span>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  onAlign('centerV');
+                  onClose();
+                }}
+                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors"
+                title="Alle markierten Elemente an ihrer vertikalen Mitte ausrichten"
+              >
+                <div className="flex items-center gap-2">
+                  <AlignVerticalJustifyCenter className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                  <span>Vertikal mittig ausrichten</span>
+                </div>
+              </button>
+            </>
+          )}
         </div>
       )}
 

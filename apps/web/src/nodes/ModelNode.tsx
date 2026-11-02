@@ -1,9 +1,26 @@
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { useStore, useEditorStore } from '../storeContext';
-import type { ModelNode as ModelNodeType, Model, Field } from '@eventflow/core';
-import { renameModel, fieldsFromText, ensureModelsForFields } from '@eventflow/core';
-import { Database, Plus, Trash2, Check, X, Edit2, Code2 } from 'lucide-react';
+import type { ModelNode as ModelNodeType, Model, Field, FieldSortCriterion } from '@eventflow/core';
+import {
+  renameModel,
+  fieldsFromText,
+  ensureModelsForFields,
+  reorderModelField,
+  sortModelFields,
+} from '@eventflow/core';
+import {
+  Database,
+  Plus,
+  Trash2,
+  Check,
+  X,
+  Edit2,
+  Code2,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react';
 
 interface Props {
   id: string;
@@ -153,9 +170,33 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
     window.dispatchEvent(new CustomEvent('eventflow:edit-model', { detail: { modelId: data.modelId } }));
   };
 
+  // Field Reordering and Sorting
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
+  const handleMoveField = (index: number, delta: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    store.update((draft) => {
+      const m = draft.models.find((item) => item.id === model.id);
+      if (m) {
+        reorderModelField(m, index, index + delta);
+      }
+    });
+  };
+
+  const handleSort = (criterion: FieldSortCriterion, e: React.MouseEvent) => {
+    e.stopPropagation();
+    store.update((draft) => {
+      const m = draft.models.find((item) => item.id === model.id);
+      if (m) {
+        sortModelFields(draft, m, criterion);
+      }
+    });
+    setIsSortMenuOpen(false);
+  };
+
   return (
     <div
-      className={`relative w-full h-full min-w-[200px] min-h-[80px] rounded-lg shadow-lg dark:shadow-xl transition-all duration-150 border flex flex-col ${
+      className={`relative w-full h-full min-w-[200px] min-h-[80px] rounded-lg shadow-lg dark:shadow-xl border flex flex-col ${
         selected ? 'border-orange-500 ring-2 ring-orange-400' : 'border-orange-300 dark:border-orange-500/60 hover:border-orange-500'
       } bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 group`}
     >
@@ -213,6 +254,58 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSortMenuOpen(!isSortMenuOpen);
+              }}
+              title="Felder sortieren"
+              className="p-1 hover:bg-black/10 rounded text-slate-900 opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+            </button>
+            {isSortMenuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1 z-30 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs nodrag nopan font-sans"
+              >
+                <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Felder sortieren
+                </div>
+                <button
+                  onClick={(e) => handleSort('name-asc', e)}
+                  className="w-full px-2.5 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Name (A – Z)
+                </button>
+                <button
+                  onClick={(e) => handleSort('name-desc', e)}
+                  className="w-full px-2.5 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Name (Z – A)
+                </button>
+                <button
+                  onClick={(e) => handleSort('type-asc', e)}
+                  className="w-full px-2.5 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Nach Datentyp
+                </button>
+                <button
+                  onClick={(e) => handleSort('required-first', e)}
+                  className="w-full px-2.5 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Pflichtfelder zuerst
+                </button>
+                <button
+                  onClick={(e) => handleSort('submodels-first', e)}
+                  className="w-full px-2.5 py-1.5 text-left text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Untermodelle zuerst
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setIsEditingName(!isEditingName)}
             title="Name inline umbenennen"
@@ -237,7 +330,7 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
             Keine Felder vorhanden
           </div>
         ) : (
-          (model.fields || []).map((field) => {
+          (model.fields || []).map((field, idx, arr) => {
             const isEditingThisField = editingFieldId === field.id;
 
             if (isEditingThisField) {
@@ -318,6 +411,22 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
                 </div>
 
                 <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                  <button
+                    disabled={idx === 0}
+                    onClick={(e) => handleMoveField(idx, -1, e)}
+                    className="p-0.5 text-slate-400 hover:text-orange-500 disabled:opacity-20 disabled:hover:text-slate-400 transition-colors"
+                    title="Nach oben verschieben"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    disabled={idx === arr.length - 1}
+                    onClick={(e) => handleMoveField(idx, 1, e)}
+                    className="p-0.5 text-slate-400 hover:text-orange-500 disabled:opacity-20 disabled:hover:text-slate-400 transition-colors"
+                    title="Nach unten verschieben"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
                   <button
                     onClick={(e) => handleStartEditField(field, e)}
                     className="p-0.5 text-slate-400 hover:text-orange-500 transition-colors"

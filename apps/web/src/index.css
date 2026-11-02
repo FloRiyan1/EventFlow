@@ -12,6 +12,17 @@
   background-color: #0b0f19;
 }
 
+/* Prevent focus outline and selection flickering on canvas nodes */
+.react-flow__node {
+  outline: none !important;
+}
+.react-flow__node:focus,
+.react-flow__node:focus-visible,
+.react-flow__node *:focus,
+.react-flow__node *:focus-visible {
+  outline: none !important;
+}
+
 /* Custom handles */
 .react-flow__handle {
   width: 10px;

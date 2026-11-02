@@ -22,6 +22,8 @@ import { Sidebar } from './components/Sidebar';
 import { HotspotEditorModal } from './components/HotspotEditorModal';
 import { ModelQuickEditModal } from './components/ModelQuickEditModal';
 import { EndpointQuickEditModal } from './components/EndpointQuickEditModal';
+import { PlantUmlExportModal } from './components/PlantUmlExportModal';
+import { DataModelsView } from './components/DataModelsView';
 import { ScreenNode } from './nodes/ScreenNode';
 import { EndpointNode } from './nodes/EndpointNode';
 import { ModelNode } from './nodes/ModelNode';
@@ -38,10 +40,30 @@ import {
   triggerHandleId,
   createModel,
   createEndpoint,
+  getModelHierarchyInfo,
+  insertModelWithSubModels,
+  insertSubModelsForNode,
+  calculateAlignmentSnap,
+  snapToGridValue,
+  alignNodes,
   type FlowNode,
   type FlowEdge,
+  type AlignmentGuideLine,
+  type AlignmentMode,
 } from '@eventflow/core';
-import { Database, Globe, Smartphone, Sparkles, Workflow, Hand, BoxSelect } from 'lucide-react';
+import { AlignmentGuideLines } from './components/AlignmentGuideLines';
+import {
+  Database,
+  Globe,
+  Smartphone,
+  Sparkles,
+  Workflow,
+  Hand,
+  BoxSelect,
+  Magnet,
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
+} from 'lucide-react';
 import { ThemeProvider, useTheme } from './themeContext';
 
 const nodeTypes = {
@@ -65,6 +87,7 @@ const CanvasInner: React.FC<{
   selectedEdgeId: string | null;
   onSelectEdge: (id: string | null) => void;
   onShowToast: (msg: string) => void;
+  onAlign: (mode: AlignmentMode) => void;
   onOpenContextMenu: (
     screenX: number,
     screenY: number,
@@ -76,6 +99,7 @@ const CanvasInner: React.FC<{
   selectedEdgeId,
   onSelectEdge,
   onShowToast,
+  onAlign,
   onOpenContextMenu,
 }) => {
   const store = useEditorStore();
@@ -86,6 +110,13 @@ const CanvasInner: React.FC<{
 
   // Selection mode: Hand (default, pan canvas) vs Box Selection (drag to marquee select)
   const [isSelectMode, setIsSelectMode] = useState(false);
+
+  // Snap to grid & smart center alignment state
+  const [isSnapEnabled, setIsSnapEnabled] = useState(true);
+  const [guideLines, setGuideLines] = useState<{
+    vertical: AlignmentGuideLine | null;
+    horizontal: AlignmentGuideLine | null;
+  }>({ vertical: null, horizontal: null });
 
   const activeBoard = useMemo(() => {
     return project.boards.find((b) => b.id === activeBoardId) ?? project.boards[0];
@@ -145,7 +176,7 @@ const CanvasInner: React.FC<{
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Sync nodes from store while preserving measured dimensions
+  // Sync nodes from store while preserving measured dimensions & active selection
   useEffect(() => {
     setNodes((prevNodes) => {
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
@@ -159,7 +190,7 @@ const CanvasInner: React.FC<{
         }
         return {
           ...newNode,
-          selected: selectedNodeIds.includes(newNode.id),
+          selected: prev.selected ?? selectedNodeIds.includes(newNode.id),
           measured: prev.measured,
           style: {
             ...newNode.style,
@@ -385,8 +416,76 @@ const CanvasInner: React.FC<{
     [store, activeBoardId]
   );
 
+  // Handle node dragging with smart snapping to grid and other nodes' centers/edges
+  const handleNodesChange = useCallback(
+    (changes: any[]) => {
+      if (isSnapEnabled) {
+        const draggingChanges = changes.filter(
+          (c) => c.type === 'position' && c.dragging && c.position
+        );
+
+        if (draggingChanges.length === 1) {
+          const change = draggingChanges[0];
+          const draggedNode = nodes.find((n) => n.id === change.id);
+
+          if (draggedNode && change.position) {
+            const candidate = {
+              ...draggedNode,
+              position: change.position,
+            };
+
+            const otherNodes = nodes.filter((n) => n.id !== change.id);
+            const snapRes = calculateAlignmentSnap(candidate, otherNodes, 10);
+
+            let nextX = snapRes.x;
+            let nextY = snapRes.y;
+
+            // If not snapped to a smart guide along an axis, snap to grid (20px)
+            if (!snapRes.verticalLine) {
+              nextX = snapToGridValue(nextX, 20);
+            }
+            if (!snapRes.horizontalLine) {
+              nextY = snapToGridValue(nextY, 20);
+            }
+
+            change.position = { x: nextX, y: nextY };
+            setGuideLines({
+              vertical: snapRes.verticalLine,
+              horizontal: snapRes.horizontalLine,
+            });
+          }
+        } else if (draggingChanges.length > 1) {
+          // Multi-node drag with snap to grid
+          for (const change of draggingChanges) {
+            if (change.position) {
+              change.position = {
+                x: snapToGridValue(change.position.x, 20),
+                y: snapToGridValue(change.position.y, 20),
+              };
+            }
+          }
+          if (guideLines.vertical || guideLines.horizontal) {
+            setGuideLines({ vertical: null, horizontal: null });
+          }
+        } else {
+          if (guideLines.vertical || guideLines.horizontal) {
+            setGuideLines({ vertical: null, horizontal: null });
+          }
+        }
+      } else {
+        if (guideLines.vertical || guideLines.horizontal) {
+          setGuideLines({ vertical: null, horizontal: null });
+        }
+      }
+
+      onNodesChange(changes);
+    },
+    [isSnapEnabled, nodes, onNodesChange, guideLines]
+  );
+
   const onNodeDragStop = useCallback(
     (_: unknown, node: Node, nodes: Node[]) => {
+      setGuideLines({ vertical: null, horizontal: null });
       handleNodesMoved(nodes && nodes.length > 0 ? nodes : [node]);
     },
     [handleNodesMoved]
@@ -394,6 +493,7 @@ const CanvasInner: React.FC<{
 
   const onSelectionDragStop = useCallback(
     (_: unknown, nodes: Node[]) => {
+      setGuideLines({ vertical: null, horizontal: null });
       handleNodesMoved(nodes);
     },
     [handleNodesMoved]
@@ -460,12 +560,21 @@ const CanvasInner: React.FC<{
             if (!b) return;
 
             if (item.type === 'model') {
-              b.nodes.push({
-                id: newNodeId,
-                kind: 'model',
-                modelId: item.id,
-                position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
-              });
+              if (item.includeSubModels) {
+                const res = insertModelWithSubModels(b, draft, item.id, {
+                  basePosition: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+                });
+                onSelectNodes(res.createdNodeIds);
+                onShowToast(`✨ Model "${item.name}" und ${res.createdNodeIds.length - 1} Untermodelle platziert!`);
+                return;
+              } else {
+                b.nodes.push({
+                  id: newNodeId,
+                  kind: 'model',
+                  modelId: item.id,
+                  position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+                });
+              }
             } else if (item.type === 'endpoint') {
               b.nodes.push({
                 id: newNodeId,
@@ -485,17 +594,17 @@ const CanvasInner: React.FC<{
           });
 
           onSelectNodes([newNodeId]);
-            onShowToast(
-              `✓ ${
-                item.type === 'model'
-                  ? 'Model'
-                  : item.type === 'endpoint'
-                  ? 'API Endpoint'
-                  : 'Flow Einstiegspunkt'
-              } auf Canvas platziert!`
-            );
-            return;
-          } catch (_) {}
+          onShowToast(
+            `✓ ${
+              item.type === 'model'
+                ? 'Model'
+                : item.type === 'endpoint'
+                ? 'API Endpoint'
+                : 'Flow Einstiegspunkt'
+            } auf Canvas platziert!`
+          );
+          return;
+        } catch (_) {}
         }
 
         // 2. Check for dropped image files
@@ -572,17 +681,62 @@ const CanvasInner: React.FC<{
             <BoxSelect className="w-3.5 h-3.5" />
             <span>Rahmen-Auswahl</span>
           </button>
+
+          {/* Divider */}
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+          {/* Snap / Magnet Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !isSnapEnabled;
+              setIsSnapEnabled(next);
+              onShowToast(next ? '🧲 Raster- & Mitten-Fang aktiviert' : 'Freies Verschieben (Fang deaktiviert)');
+            }}
+            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-all ${
+              isSnapEnabled
+                ? 'bg-amber-500/15 dark:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+            }`}
+            title={isSnapEnabled ? 'Raster- & Mitten-Fang aktiv (Klicken zum Ausschalten)' : 'Freies Verschieben (Klicken zum Einschalten)'}
+          >
+            <Magnet className={`w-3.5 h-3.5 ${isSnapEnabled ? 'text-amber-500 animate-pulse' : 'text-slate-400'}`} />
+            <span>Snap</span>
+          </button>
+
+          {/* Multi-Selection Tools */}
           {selectedNodeIds.length > 1 && (
-            <span className="ml-2 px-2.5 py-1 bg-indigo-500/20 text-indigo-300 font-semibold text-[11px] rounded-lg border border-indigo-500/30">
-              {selectedNodeIds.length} markiert
-            </span>
+            <>
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+              <button
+                type="button"
+                onClick={() => onAlign('centerH')}
+                className="px-2 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+                title="Ausgewählte Elemente horizontal mittig ausrichten"
+              >
+                <AlignHorizontalJustifyCenter className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                <span className="hidden sm:inline">Mitte H</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAlign('centerV')}
+                className="px-2 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+                title="Ausgewählte Elemente vertikal mittig ausrichten"
+              >
+                <AlignVerticalJustifyCenter className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                <span className="hidden sm:inline">Mitte V</span>
+              </button>
+              <span className="ml-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px] rounded-lg border border-indigo-500/30">
+                {selectedNodeIds.length} markiert
+              </span>
+            </>
           )}
         </div>
 
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -592,6 +746,7 @@ const CanvasInner: React.FC<{
           selectionMode={SelectionMode.Partial}
           selectionOnDrag={isSelectMode}
           panOnDrag={isSelectMode ? [1, 2] : true}
+          paneClickDistance={5}
           selectionKeyCode={['Shift', 'Control']}
           multiSelectionKeyCode={['Shift', 'Control']}
           onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
@@ -615,6 +770,7 @@ const CanvasInner: React.FC<{
             onSelectEdge(edge.id);
           }}
           onPaneClick={() => {
+            setGuideLines({ vertical: null, horizontal: null });
             onSelectNodes([]);
             onSelectEdge(null);
           }}
@@ -627,12 +783,21 @@ const CanvasInner: React.FC<{
               onSelectNodes(newSelected);
             }
             const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            let hasSubModels = false;
+            if (node.type === 'model') {
+              const nodeData = activeBoard.nodes.find((n) => n.id === node.id);
+              if (nodeData && nodeData.kind === 'model') {
+                const info = getModelHierarchyInfo(project, nodeData.modelId);
+                hasSubModels = info.subModels.length > 0;
+              }
+            }
             onOpenContextMenu(event.clientX, event.clientY, {
               type: 'node',
               nodeId: node.id,
               nodeKind: node.type,
               position: flowPos,
               selectedCount: newSelected.length,
+              hasSubModels,
             });
           }}
           onEdgeContextMenu={(event, edge) => {
@@ -660,7 +825,13 @@ const CanvasInner: React.FC<{
           maxZoom={2.5}
           defaultViewport={{ x: 50, y: 50, zoom: 0.8 }}
         >
-        <Background
+          {/* Smart Alignment Guides */}
+          <AlignmentGuideLines
+            verticalLine={guideLines.vertical}
+            horizontalLine={guideLines.horizontal}
+          />
+
+          <Background
           variant={BackgroundVariant.Dots}
           gap={24}
           size={1.5}
@@ -741,7 +912,15 @@ const AppContent: React.FC = () => {
   const [hotspotModalNodeId, setHotspotModalNodeId] = useState<string | null>(null);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'flows' | 'models'>('flows');
+  const [plantUmlModalOpen, setPlantUmlModalOpen] = useState(false);
+  const [plantUmlModalTab, setPlantUmlModalTab] = useState<'export' | 'import'>('export');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleOpenPlantUml = useCallback((tab: 'export' | 'import' = 'export') => {
+    setPlantUmlModalTab(tab);
+    setPlantUmlModalOpen(true);
+  }, []);
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{
@@ -1197,6 +1376,54 @@ const AppContent: React.FC = () => {
     showToast('Notiz erstellt');
   }, [activeBoardId, store, showToast]);
 
+  const handleInsertSubModelsForNode = useCallback((nodeId: string) => {
+    let addedCount = 0;
+    let newIds: string[] = [];
+    store.update((draft) => {
+      const b = draft.boards.find((board) => board.id === activeBoardId);
+      if (!b) return;
+      const res = insertSubModelsForNode(b, draft, nodeId);
+      addedCount = res.createdNodeIds.length;
+      newIds = res.createdNodeIds;
+    });
+    if (addedCount > 0) {
+      setSelectedNodeIds(newIds);
+      showToast(`✨ ${addedCount} Untermodelle eingefügt und verbunden!`);
+    } else {
+      showToast('ℹ️ Alle Untermodelle sind bereits auf diesem Board vorhanden.');
+    }
+  }, [activeBoardId, store, showToast]);
+
+  const handleAlignSelection = useCallback(
+    (mode: AlignmentMode) => {
+      if (selectedNodeIds.length <= 1) return;
+      const currentBoard = project.boards.find((b) => b.id === activeBoardId);
+      if (!currentBoard) return;
+      const nodesToAlign = currentBoard.nodes.filter((n) => selectedNodeIds.includes(n.id));
+      const updates = alignNodes(nodesToAlign, mode);
+      if (updates.length > 0) {
+        store.update((draft) => {
+          const b = draft.boards.find((board) => board.id === activeBoardId);
+          if (!b) return;
+          for (const u of updates) {
+            const n = b.nodes.find((item) => item.id === u.id);
+            if (n) {
+              n.position = u.position;
+            }
+          }
+        });
+        const label =
+          mode === 'centerH'
+            ? 'Horizontal mittig zentriert'
+            : mode === 'centerV'
+            ? 'Vertikal mittig zentriert'
+            : 'Ausgerichtet';
+        showToast(`✨ ${updates.length} Elemente ${label}`);
+      }
+    },
+    [selectedNodeIds, project.boards, activeBoardId, store, showToast]
+  );
+
   // Listen to custom node edit events
   useEffect(() => {
     const handleOpenHotspots = (e: CustomEvent<{ nodeId: string }>) => {
@@ -1270,64 +1497,83 @@ const AppContent: React.FC = () => {
     >
       {/* Top Navigation */}
       <TopBar
+        activeView={activeView}
+        onSelectView={setActiveView}
+        onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
+        onOpenPlantUmlModal={handleOpenPlantUml}
         onEditModel={(id) => setEditingModelId(id)}
         onEditEndpoint={(id) => setEditingEndpointId(id)}
         onPasteFromClipboard={() => handlePasteFromClipboard()}
       />
 
       {/* Main Workspace Area */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Sidebar */}
-        <Sidebar
-          onEditModel={(id) => setEditingModelId(id)}
-          onEditEndpoint={(id) => setEditingEndpointId(id)}
-        />
+      {activeView === 'flows' ? (
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Left Sidebar */}
+          <Sidebar
+            onEditModel={(id) => setEditingModelId(id)}
+            onEditEndpoint={(id) => setEditingEndpointId(id)}
+            onOpenDataModelsView={() => setActiveView('models')}
+          />
 
-        {/* Center: React Flow Canvas with Provider */}
-        <main className="flex-1 h-full w-full relative bg-slate-100 dark:bg-[#0b0f19]">
-          <ReactFlowProvider>
-            <CanvasInner
-              onSelectNodes={setSelectedNodeIds}
-              selectedNodeIds={selectedNodeIds}
-              selectedEdgeId={selectedEdgeId}
-              onSelectEdge={setSelectedEdgeId}
-              onShowToast={showToast}
-              onOpenContextMenu={(x, y, target) => {
-                setContextMenu({ x, y, target });
-              }}
-            />
-          </ReactFlowProvider>
+          {/* Center: React Flow Canvas with Provider */}
+          <main className="flex-1 h-full w-full relative bg-slate-100 dark:bg-[#0b0f19]">
+            <ReactFlowProvider>
+              <CanvasInner
+                onSelectNodes={setSelectedNodeIds}
+                selectedNodeIds={selectedNodeIds}
+                selectedEdgeId={selectedEdgeId}
+                onSelectEdge={setSelectedEdgeId}
+                onShowToast={showToast}
+                onAlign={handleAlignSelection}
+                onOpenContextMenu={(x, y, target) => {
+                  setContextMenu({ x, y, target });
+                }}
+              />
+            </ReactFlowProvider>
 
-          {/* Context Menu Modal / Dropdown */}
-          {contextMenu && (
-            <ContextMenu
-              x={contextMenu.x}
-              y={contextMenu.y}
-              target={contextMenu.target}
-              onClose={() => setContextMenu(null)}
-              onCopy={() => handleCopyNodes(contextMenu.target.nodeId)}
-              onPaste={(pos) => handleContextMenuPaste(pos)}
-              onDuplicate={(nodeId) => handleDuplicateNodes(nodeId)}
-              onDelete={(nodeId) => handleDeleteNodes(nodeId)}
-              onDeleteEdge={(edgeId) => handleDeleteEdge(edgeId)}
-              onEdit={handleContextMenuEdit}
-              onCreateEndpoint={handleCreateEndpoint}
-              onCreateModel={handleCreateModel}
-              onCreateUserAction={handleCreateUserAction}
-              onCreateNote={handleCreateNote}
-              hasClipboardContent={copiedNodes.length > 0}
-            />
-          )}
+            {/* Context Menu Modal / Dropdown */}
+            {contextMenu && (
+              <ContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                target={contextMenu.target}
+                onClose={() => setContextMenu(null)}
+                onCopy={() => handleCopyNodes(contextMenu.target.nodeId)}
+                onPaste={(pos) => handleContextMenuPaste(pos)}
+                onDuplicate={(nodeId) => handleDuplicateNodes(nodeId)}
+                onDelete={(nodeId) => handleDeleteNodes(nodeId)}
+                onDeleteEdge={(edgeId) => handleDeleteEdge(edgeId)}
+                onEdit={handleContextMenuEdit}
+                onInsertSubModels={handleInsertSubModelsForNode}
+                onCreateEndpoint={handleCreateEndpoint}
+                onCreateModel={handleCreateModel}
+                onCreateUserAction={handleCreateUserAction}
+                onCreateNote={handleCreateNote}
+                onAlign={handleAlignSelection}
+                hasClipboardContent={copiedNodes.length > 0}
+              />
+            )}
+          </main>
+        </div>
+      ) : (
+        <div className="flex-1 flex overflow-hidden relative">
+          <DataModelsView
+            onEditModel={(id) => setEditingModelId(id)}
+            onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
+            onOpenPlantUmlImport={() => handleOpenPlantUml('import')}
+            onShowToast={showToast}
+          />
+        </div>
+      )}
 
-          {/* Toast Notification */}
-          {toastMessage && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 border border-amber-500/50 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 z-50">
-              <Sparkles className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
-              <span>{toastMessage}</span>
-            </div>
-          )}
-        </main>
-      </div>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 border border-amber-500/50 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 z-50">
+          <Sparkles className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Modals */}
       <HotspotEditorModal
@@ -1343,6 +1589,14 @@ const AppContent: React.FC = () => {
       <EndpointQuickEditModal
         endpointId={editingEndpointId}
         onClose={() => setEditingEndpointId(null)}
+      />
+
+      <PlantUmlExportModal
+        isOpen={plantUmlModalOpen}
+        initialTab={plantUmlModalTab}
+        onClose={() => setPlantUmlModalOpen(false)}
+        onShowToast={showToast}
+        onOpenFlowsView={() => setActiveView('flows')}
       />
     </div>
   );

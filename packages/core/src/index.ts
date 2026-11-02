@@ -6,3 +6,6 @@ export * from './ops';
 export * from './store';
 export * from './projectFile';
 export * from './dartExport';
+export * from './plantUmlExport';
+export * from './plantUmlImport';
+export * from './alignmentUtils';

@@ -9,6 +9,8 @@ import {
   deleteBoard,
   modelUsages,
   endpointUsages,
+  getModelHierarchyInfo,
+  insertModelWithSubModels,
   uid,
 } from '@eventflow/core';
 import type { Model, Endpoint } from '@eventflow/core';
@@ -24,14 +26,22 @@ import {
   GripVertical,
   AlertTriangle,
   Workflow,
+  ListTree,
+  ExternalLink,
+  Network,
 } from 'lucide-react';
 
 interface Props {
   onEditModel: (modelId: string) => void;
   onEditEndpoint: (endpointId: string) => void;
+  onOpenDataModelsView?: () => void;
 }
 
-export const Sidebar: React.FC<Props> = ({ onEditModel, onEditEndpoint }) => {
+export const Sidebar: React.FC<Props> = ({
+  onEditModel,
+  onEditEndpoint,
+  onOpenDataModelsView,
+}) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
   const activeBoardId = useStore((s) => s.activeBoardId);
@@ -190,19 +200,26 @@ export const Sidebar: React.FC<Props> = ({ onEditModel, onEditEndpoint }) => {
     setDeleteConfirmation(null);
   };
 
-  // Place an existing model onto the current board
-  const placeModelOnBoard = (model: Model) => {
+  // Place an existing model onto the current board (optionally with all submodels)
+  const placeModelOnBoard = (model: Model, includeSubModels = false) => {
     store.update((draft) => {
       const b = draft.boards.find((item) => item.id === activeBoardId) ?? draft.boards[0];
       if (!b) return;
-      const x = 300 + Math.random() * 200;
-      const y = 600 + Math.random() * 100;
-      b.nodes.push({
-        id: uid('n_'),
-        kind: 'model',
-        modelId: model.id,
-        position: { x, y },
-      });
+      const x = 300 + Math.random() * 120;
+      const y = 600 + Math.random() * 60;
+
+      if (includeSubModels) {
+        insertModelWithSubModels(b, draft, model.id, {
+          basePosition: { x, y },
+        });
+      } else {
+        b.nodes.push({
+          id: uid('n_'),
+          kind: 'model',
+          modelId: model.id,
+          position: { x, y },
+        });
+      }
     });
   };
 
@@ -427,6 +444,21 @@ export const Sidebar: React.FC<Props> = ({ onEditModel, onEditEndpoint }) => {
               💡 Tipp: Ziehe ein Model per <strong>Drag & Drop</strong> direkt auf den Canvas.
             </div>
 
+            {onOpenDataModelsView && (
+              <button
+                type="button"
+                onClick={onOpenDataModelsView}
+                className="w-full px-2.5 py-1.5 bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/60 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors shadow-sm"
+                title="Vollständige Datenmodell-Ansicht mit allen Untermodellen öffnen"
+              >
+                <div className="flex items-center gap-1.5">
+                  <ListTree className="w-3.5 h-3.5 text-orange-500" />
+                  <span>In Datenmodell-Ansicht öffnen</span>
+                </div>
+                <ExternalLink className="w-3 h-3 opacity-70" />
+              </button>
+            )}
+
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-2.5 top-2.5" />
               <input
@@ -439,52 +471,89 @@ export const Sidebar: React.FC<Props> = ({ onEditModel, onEditEndpoint }) => {
             </div>
 
             <div className="space-y-1.5">
-              {filteredModels.map((m) => (
-                <div
-                  key={m.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(
-                      'application/eventflow',
-                      JSON.stringify({ type: 'model', id: m.id, name: m.name })
-                    );
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                  className="p-2.5 bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 rounded-lg text-xs flex flex-col gap-1.5 group hover:border-orange-400 dark:hover:border-orange-500/50 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <GripVertical className="w-3.5 h-3.5 text-slate-400 dark:text-slate-600 group-hover:text-orange-500 dark:group-hover:text-orange-400 shrink-0" />
-                    <span className="font-semibold text-orange-600 dark:text-orange-300 truncate flex-1" title={m.name}>
-                      {m.name}
-                    </span>
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => onEditModel(m.id)}
-                        className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title="Model bearbeiten"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteModel(m)}
-                        className="text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-                        title="Model löschen"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+              {filteredModels.map((m) => {
+                const hierarchy = getModelHierarchyInfo(project, m.id);
+                const hasSubModels = hierarchy.subModels.length > 0;
+
+                return (
+                  <div
+                    key={m.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(
+                        'application/eventflow',
+                        JSON.stringify({ type: 'model', id: m.id, name: m.name })
+                      );
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    className="p-2.5 bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 rounded-lg text-xs flex flex-col gap-1.5 group hover:border-orange-400 dark:hover:border-orange-500/50 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <GripVertical className="w-3.5 h-3.5 text-slate-400 dark:text-slate-600 group-hover:text-orange-500 dark:group-hover:text-orange-400 shrink-0" />
+                      <span className="font-semibold text-orange-600 dark:text-orange-300 truncate flex-1" title={m.name}>
+                        {m.name}
+                      </span>
+                      {hasSubModels && (
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData(
+                              'application/eventflow',
+                              JSON.stringify({ type: 'model', id: m.id, name: m.name, includeSubModels: true })
+                            );
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                          className="text-[9px] px-1 py-0.2 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-mono font-semibold border border-orange-200 dark:border-orange-800/60 cursor-grab hover:bg-orange-200"
+                          title="Ziehen, um dieses Model inkl. aller Untermodelle auf den Canvas zu ziehen"
+                        >
+                          +Sub
+                        </span>
+                      )}
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          onClick={() => onEditModel(m.id)}
+                          className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                          title="Model bearbeiten"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteModel(m)}
+                          className="text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                          title="Model löschen"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 gap-1">
+                      <span>{m.fields.length} Felder</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => placeModelOnBoard(m, false)}
+                          className="text-orange-600 dark:text-orange-400 hover:text-orange-500 font-medium hover:underline text-[10px]"
+                          title="Nur dieses Model auf dem Board platzieren"
+                        >
+                          + Board
+                        </button>
+                        {hasSubModels && (
+                          <button
+                            type="button"
+                            onClick={() => placeModelOnBoard(m, true)}
+                            className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/60 font-semibold border border-orange-300 dark:border-orange-800/60 flex items-center gap-1 text-[10px] transition-colors"
+                            title={`"${m.name}" inklusive aller ${hierarchy.subModels.length} Untermodelle auf dem Canvas platzieren`}
+                          >
+                            <Network className="w-2.5 h-2.5" />
+                            <span>+ Inkl. Untermodelle</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span>{m.fields.length} Felder</span>
-                    <button
-                      onClick={() => placeModelOnBoard(m)}
-                      className="text-orange-600 dark:text-orange-400 hover:text-orange-500 dark:hover:text-orange-300 font-medium flex items-center gap-1 hover:underline"
-                    >
-                      + Aufs Board
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

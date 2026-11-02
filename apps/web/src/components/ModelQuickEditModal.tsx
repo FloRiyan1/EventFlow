@@ -6,9 +6,10 @@ import {
   ensureModelsForFields,
   referencedTypeNames,
   renameModel,
+  sortModelFields,
 } from '@eventflow/core';
-import type { Model } from '@eventflow/core';
-import { X, Check, Database, Sparkles, AlertCircle } from 'lucide-react';
+import type { Model, FieldSortCriterion } from '@eventflow/core';
+import { X, Check, Database, Sparkles, AlertCircle, ArrowUpDown } from 'lucide-react';
 
 interface Props {
   modelId: string | null;
@@ -32,6 +33,17 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
   if (!modelId || !model) return null;
 
   const parsedFields = fieldsFromText(text, model.fields);
+
+  const handleSortFields = (criterion: FieldSortCriterion) => {
+    const currentProject = store.getState().project;
+    const dummyModel: Model = {
+      id: model.id,
+      name: name || model.name,
+      fields: [...parsedFields],
+    };
+    sortModelFields(currentProject, dummyModel, criterion);
+    setText(fieldsToText(dummyModel.fields));
+  };
 
   // Check referenced models
   const allReferenced = [
@@ -92,14 +104,55 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-400">
                 Felder ({parsedFields.length} erkannt)
               </label>
-              <span className="text-[11px] text-slate-500">
-                Format: <code className="text-orange-600 dark:text-orange-400">String? name</code> oder{' '}
-                <code className="text-orange-600 dark:text-orange-400">List&lt;Model&gt; items</code>
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mr-0.5 flex items-center gap-0.5">
+                  <ArrowUpDown className="w-3 h-3" /> Sortieren:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleSortFields('name-asc')}
+                  className="px-2 py-0.5 text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-orange-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-200 dark:border-slate-700 transition-colors"
+                  title="Alphabetisch aufsteigend sortieren"
+                >
+                  A–Z
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSortFields('name-desc')}
+                  className="px-2 py-0.5 text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-orange-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-200 dark:border-slate-700 transition-colors"
+                  title="Alphabetisch absteigend sortieren"
+                >
+                  Z–A
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSortFields('type-asc')}
+                  className="px-2 py-0.5 text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-orange-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-200 dark:border-slate-700 transition-colors"
+                  title="Nach Datentyp sortieren"
+                >
+                  Typ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSortFields('required-first')}
+                  className="px-2 py-0.5 text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-orange-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-200 dark:border-slate-700 transition-colors"
+                  title="Pflichtfelder zuerst"
+                >
+                  Pflicht
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSortFields('submodels-first')}
+                  className="px-2 py-0.5 text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-orange-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-200 dark:border-slate-700 transition-colors"
+                  title="Untermodelle zuerst"
+                >
+                  Sub-Modelle
+                </button>
+              </div>
             </div>
             <textarea
               rows={11}
