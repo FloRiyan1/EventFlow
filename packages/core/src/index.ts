@@ -9,3 +9,4 @@ export * from './dartExport';
 export * from './plantUmlExport';
 export * from './plantUmlImport';
 export * from './alignmentUtils';
+export * from './collaboration';

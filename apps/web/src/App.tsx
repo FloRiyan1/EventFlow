@@ -65,6 +65,9 @@ import {
   AlignVerticalJustifyCenter,
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './themeContext';
+import { CollaborationProvider, useCollaboration } from './collaborationContext';
+import { MultiplayerCursors } from './components/MultiplayerCursors';
+import { CollaborationModal } from './components/CollaborationModal';
 
 const nodeTypes = {
   screen: ScreenNode,
@@ -103,6 +106,7 @@ const CanvasInner: React.FC<{
   onOpenContextMenu,
 }) => {
   const store = useEditorStore();
+  const { manager } = useCollaboration();
   const project = useStore((s) => s.project);
   const activeBoardId = useStore((s) => s.activeBoardId);
   const { screenToFlowPosition } = useReactFlow();
@@ -656,6 +660,13 @@ const CanvasInner: React.FC<{
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
+        onPointerMove={(e) => {
+          const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          manager.updateCursor(flowPos);
+        }}
+        onPointerLeave={() => {
+          manager.updateCursor(null);
+        }}
       >
         {/* Floating Canvas Mode Toolbar */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/95 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 rounded-xl p-1 shadow-xl backdrop-blur-md text-xs transition-colors">
@@ -749,10 +760,18 @@ const CanvasInner: React.FC<{
           paneClickDistance={5}
           selectionKeyCode={['Shift', 'Control']}
           multiSelectionKeyCode={['Shift', 'Control']}
+          onPointerMove={(e) => {
+            const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            manager.updateCursor(flowPos);
+          }}
+          onPointerLeave={() => {
+            manager.updateCursor(null);
+          }}
           onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
             const ids = selNodes.map((n) => n.id);
             if (ids.length !== selectedNodeIds.length || !ids.every((id) => selectedNodeIds.includes(id))) {
               onSelectNodes(ids);
+              manager.updateSelection(ids);
             }
             if (selNodes.length > 0) {
               onSelectEdge(null);
@@ -830,6 +849,9 @@ const CanvasInner: React.FC<{
             verticalLine={guideLines.vertical}
             horizontalLine={guideLines.horizontal}
           />
+
+          {/* Multiplayer Live Cursors */}
+          <MultiplayerCursors />
 
           <Background
           variant={BackgroundVariant.Dots}
@@ -1598,6 +1620,8 @@ const AppContent: React.FC = () => {
         onShowToast={showToast}
         onOpenFlowsView={() => setActiveView('flows')}
       />
+
+      <CollaborationModal />
     </div>
   );
 };
@@ -1605,7 +1629,9 @@ const AppContent: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <ThemeProvider>
-      <AppContent />
+      <CollaborationProvider>
+        <AppContent />
+      </CollaborationProvider>
     </ThemeProvider>
   );
 };
