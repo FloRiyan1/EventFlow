@@ -256,4 +256,16 @@ describe('Java Code Parsing (Import)', () => {
     const user = project.models.find((m) => m.name === 'User')!;
     expect(user.fields.map((f) => f.name)).toEqual(['email', 'username', 'loginCount']);
   });
+
+  it('handles empty models and missing types gracefully without throwing', () => {
+    const emptyProj = createEmptyProject('Empty');
+    expect(() => exportAllModelsToJava(emptyProj)).not.toThrow();
+
+    const emptyModel = createModel('EmptyModel', []);
+    expect(() => exportModelToJava(emptyModel)).not.toThrow();
+
+    // Field with undefined or strange type
+    expect(mapTypeToJava('')).toBe('Object');
+    expect(mapTypeToJava(undefined as any)).toBe('Object');
+  });
 });

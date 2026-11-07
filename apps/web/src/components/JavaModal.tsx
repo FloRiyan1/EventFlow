@@ -118,30 +118,39 @@ export const JavaModal: React.FC<Props> = ({
   const [createReferencedModels, setCreateReferencedModels] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (!isOpen) return null;
-
-  // Compute Generated Java Code
+  // Compute Generated Java Code (Hook called unconditionally)
   const generatedJavaCode = useMemo(() => {
-    const options: JavaExportOptions = {
-      style: exportStyle,
-      packageName,
-      useJackson,
-    };
+    if (!isOpen) return '';
+    try {
+      const options: JavaExportOptions = {
+        style: exportStyle,
+        packageName,
+        useJackson,
+      };
 
-    if (exportTarget === 'all') {
-      return exportAllModelsToJava(project, options);
-    } else {
-      const model = project.models.find((m) => m.id === exportTarget);
-      if (!model) return '// Model nicht gefunden';
-      return exportModelToJava(model, options);
+      if (exportTarget === 'all') {
+        return exportAllModelsToJava(project, options);
+      } else {
+        const model = (project.models || []).find((m) => m.id === exportTarget);
+        if (!model) return '// Model nicht gefunden';
+        return exportModelToJava(model, options);
+      }
+    } catch (err) {
+      console.error('Error generating Java code:', err);
+      return `// Fehler beim Generieren des Java-Codes: ${err instanceof Error ? err.message : String(err)}`;
     }
-  }, [project, exportTarget, exportStyle, packageName, useJackson]);
+  }, [isOpen, project, exportTarget, exportStyle, packageName, useJackson]);
 
-  // Compute Import Live Preview
+  // Compute Import Live Preview (Hook called unconditionally)
   const previewParse = useMemo(() => {
-    if (!importCode.trim()) return null;
-    return parseJavaCode(importCode);
-  }, [importCode]);
+    if (!isOpen || !importCode.trim()) return null;
+    try {
+      return parseJavaCode(importCode);
+    } catch (err) {
+      console.error('Error parsing Java code:', err);
+      return null;
+    }
+  }, [isOpen, importCode]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(generatedJavaCode);
@@ -155,10 +164,11 @@ export const JavaModal: React.FC<Props> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
+    const targetModel = (project.models || []).find((m) => m.id === exportTarget);
     const filename =
       exportTarget === 'all'
-        ? `${project.name.toLowerCase().replace(/\s+/g, '_')}_models.java`
-        : `${project.models.find((m) => m.id === exportTarget)?.name || 'Model'}.java`;
+        ? `${(project.name || 'project').toLowerCase().replace(/\s+/g, '_')}_models.java`
+        : `${targetModel?.name || 'Model'}.java`;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
@@ -198,6 +208,8 @@ export const JavaModal: React.FC<Props> = ({
 
     onClose();
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
@@ -271,15 +283,15 @@ export const JavaModal: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Modell:</span>
                   <select
-                    value={exportTarget}
+                    value={(project.models || []).some((m) => m.id === exportTarget) ? exportTarget : 'all'}
                     onChange={(e) => setExportTarget(e.target.value)}
                     className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
-                    <option value="all">Alle Modelle ({project.models.length})</option>
+                    <option value="all">Alle Modelle ({(project.models || []).length})</option>
                     <optgroup label="Einzelne Modelle">
-                      {project.models.map((m) => (
+                      {(project.models || []).map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name} ({m.fields.length} Felder)
+                          {m.name} ({(m.fields || []).length} Felder)
                         </option>
                       ))}
                     </optgroup>
