@@ -6,7 +6,6 @@ import {
   Controls,
   Background,
   BackgroundVariant,
-  MiniMap,
   Node,
   Edge,
   MarkerType,
@@ -1541,10 +1540,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           }
         />
         <Controls className="!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !shadow-md !rounded-lg" />
-        <MiniMap
-          nodeColor="#f97316"
-          className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !rounded-xl"
-        />
       </ReactFlow>
 
       {/* Context Menu Dropdown */}
@@ -2524,10 +2519,6 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   color={theme === 'dark' ? '#334155' : '#cbd5e1'}
                 />
                 <Controls className="!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !shadow-md !rounded-lg" />
-                <MiniMap
-                  nodeColor={(n) => (n.data?.isRoot ? '#3b82f6' : '#f97316')}
-                  className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !rounded-xl"
-                />
               </ReactFlow>
             </ReactFlowProvider>
 
