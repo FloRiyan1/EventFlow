@@ -12,3 +12,4 @@ export * from './alignmentUtils';
 export * from './collaboration';
 export * from './javaExport';
 export * from './javaImport';
+export * from './aiClient';

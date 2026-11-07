@@ -22,6 +22,7 @@ import {
   FileCode,
   Users,
   Coffee,
+  Sparkles,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { useCollaboration } from '../collaborationContext';
@@ -32,6 +33,7 @@ interface Props {
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlModal?: (tab?: 'export' | 'import') => void;
   onOpenJavaModal?: (tab?: 'export' | 'import') => void;
+  onOpenAiModal?: () => void;
   onEditModel: (modelId: string) => void;
   onEditEndpoint: (endpointId: string) => void;
   onPasteFromClipboard: () => void;
@@ -43,6 +45,7 @@ export const TopBar: React.FC<Props> = ({
   onOpenPlantUmlExport,
   onOpenPlantUmlModal,
   onOpenJavaModal,
+  onOpenAiModal,
   onEditModel,
   onEditEndpoint,
   onPasteFromClipboard,
@@ -449,6 +452,18 @@ export const TopBar: React.FC<Props> = ({
               <span>Import</span>
             </button>
           </div>
+        )}
+
+        {/* Local AI Assistant Integration */}
+        {onOpenAiModal && (
+          <button
+            onClick={onOpenAiModal}
+            className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors border border-purple-300 dark:border-purple-800 shadow-sm"
+            title="Lokale KI (Open WebUI / Ollama) zur Datenmodellierung nutzen"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+            <span>KI-Assistent</span>
+          </button>
         )}
 
         {/* Live Multiplayer Collaboration */}

@@ -24,6 +24,7 @@ import { ModelQuickEditModal } from './components/ModelQuickEditModal';
 import { EndpointQuickEditModal } from './components/EndpointQuickEditModal';
 import { PlantUmlExportModal } from './components/PlantUmlExportModal';
 import { JavaModal } from './components/JavaModal';
+import { AiImportModal } from './components/AiImportModal';
 import { DataModelsView } from './components/DataModelsView';
 import { ScreenNode } from './nodes/ScreenNode';
 import { EndpointNode } from './nodes/EndpointNode';
@@ -1061,6 +1062,7 @@ const AppContent: React.FC = () => {
   const [javaModalOpen, setJavaModalOpen] = useState(false);
   const [javaModalTab, setJavaModalTab] = useState<'export' | 'import'>('export');
   const [javaModalModelId, setJavaModalModelId] = useState<string | null>(null);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleOpenPlantUml = useCallback((tab: 'export' | 'import' = 'export') => {
@@ -1072,6 +1074,10 @@ const AppContent: React.FC = () => {
     setJavaModalTab(tab);
     setJavaModalModelId(modelId);
     setJavaModalOpen(true);
+  }, []);
+
+  const handleOpenAiModal = useCallback(() => {
+    setAiModalOpen(true);
   }, []);
 
   // Context Menu State
@@ -1654,6 +1660,7 @@ const AppContent: React.FC = () => {
         onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
         onOpenPlantUmlModal={handleOpenPlantUml}
         onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
+        onOpenAiModal={handleOpenAiModal}
         onEditModel={(id) => setEditingModelId(id)}
         onEditEndpoint={(id) => setEditingEndpointId(id)}
         onPasteFromClipboard={() => handlePasteFromClipboard()}
@@ -1717,6 +1724,7 @@ const AppContent: React.FC = () => {
             onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
             onOpenPlantUmlImport={() => handleOpenPlantUml('import')}
             onOpenJavaModal={handleOpenJavaModal}
+            onOpenAiModal={handleOpenAiModal}
             onShowToast={showToast}
           />
         </div>
@@ -1762,6 +1770,12 @@ const AppContent: React.FC = () => {
           setJavaModalOpen(false);
           setJavaModalModelId(null);
         }}
+        onShowToast={showToast}
+      />
+
+      <AiImportModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
         onShowToast={showToast}
       />
 

@@ -75,6 +75,7 @@ import {
   MapPin,
   FileText,
   GripVertical,
+  Sparkles,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { useCollaboration } from '../collaborationContext';
@@ -90,6 +91,7 @@ interface DataModelsViewProps {
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlImport?: () => void;
   onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
+  onOpenAiModal?: () => void;
   onShowToast?: (msg: string) => void;
 }
 
@@ -876,6 +878,7 @@ interface FreeModelCanvasInnerProps {
   onEditModel: (modelId: string) => void;
   onShowToast?: (msg: string) => void;
   onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
+  onOpenAiModal?: () => void;
 }
 
 const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
@@ -883,6 +886,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   onEditModel,
   onShowToast,
   onOpenJavaModal,
+  onOpenAiModal,
 }) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
@@ -1473,6 +1477,19 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           </button>
         )}
 
+        {/* Local AI Assistant Integration */}
+        {onOpenAiModal && (
+          <button
+            type="button"
+            onClick={onOpenAiModal}
+            className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Lokale KI (Open WebUI / Ollama) zur Datenmodellierung nutzen"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+            <span>KI</span>
+          </button>
+        )}
+
         {/* Multi-Selection Tools */}
         {selectedNodeIds.length > 1 && (
           <>
@@ -1734,6 +1751,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   onOpenPlantUmlExport,
   onOpenPlantUmlImport,
   onOpenJavaModal,
+  onOpenAiModal,
   onShowToast,
 }) => {
   const store = useEditorStore();
@@ -2192,6 +2210,18 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
             </div>
           )}
 
+          {/* Local AI Assistant Integration */}
+          {onOpenAiModal && (
+            <button
+              onClick={onOpenAiModal}
+              className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-300 dark:border-purple-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+              title="Lokale KI (Open WebUI / Ollama) zur Datenmodellierung aufrufen"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+              <span>KI Modellierung</span>
+            </button>
+          )}
+
           {/* New Model Button */}
           <button
             onClick={handleCreateModel}
@@ -2474,6 +2504,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   onEditModel={onEditModel}
                   onShowToast={onShowToast}
                   onOpenJavaModal={onOpenJavaModal}
+                  onOpenAiModal={onOpenAiModal}
                 />
               </ReactFlowProvider>
             )}
