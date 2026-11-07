@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Copy,
   ClipboardPaste,
@@ -82,7 +82,24 @@ export const ContextMenu: React.FC<Props> = ({
   onOpenAiModal,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<'export' | 'import' | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const prevMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Track global mouse moves to calculate diagonal movement towards the submenu
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      prevMousePosRef.current = mousePosRef.current;
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   // Close on outside click or escape key
   useEffect(() => {
@@ -121,6 +138,84 @@ export const ContextMenu: React.FC<Props> = ({
   const hasExportOptions = Boolean(onOpenPlantUmlExport || onOpenJavaModal);
   const hasImportOptions = Boolean(onOpenPlantUmlImport || onOpenJavaModal || onOpenAiModal);
 
+  // Check if cursor is moving diagonally towards the open submenu
+  const isMovingTowardsSubmenu = useCallback(() => {
+    if (!submenuRef.current) return false;
+    const rect = submenuRef.current.getBoundingClientRect();
+    const curr = mousePosRef.current;
+    const prev = prevMousePosRef.current;
+    const dx = curr.x - prev.x;
+
+    // Moving horizontally towards the submenu?
+    const movingTowardsX = openToLeft ? dx < -0.3 : dx > 0.3;
+    if (!movingTowardsX) return false;
+
+    // Within vertical range of submenu (with generous buffer for diagonal movement)
+    const buffer = 50;
+    return curr.y >= rect.top - buffer && curr.y <= rect.bottom + buffer;
+  }, [openToLeft]);
+
+  const handleMouseEnterItem = useCallback(
+    (key: 'export' | 'import') => {
+      if (isSmallScreen) return;
+
+      if (activeSubmenu === key) {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+        return;
+      }
+
+      if (activeSubmenu && activeSubmenu !== key && isMovingTowardsSubmenu()) {
+        // User is moving diagonally towards the existing active submenu
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => {
+          setActiveSubmenu(key);
+        }, 250);
+        return;
+      }
+
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setActiveSubmenu(key);
+    },
+    [activeSubmenu, isMovingTowardsSubmenu, isSmallScreen]
+  );
+
+  const handleMouseLeaveItem = useCallback(() => {
+    if (isSmallScreen) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const delay = isMovingTowardsSubmenu() ? 320 : 200;
+    timerRef.current = setTimeout(() => {
+      setActiveSubmenu(null);
+    }, delay);
+  }, [isMovingTowardsSubmenu, isSmallScreen]);
+
+  const handleMouseEnterSubmenu = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const handleMouseEnterOther = useCallback(() => {
+    if (isSmallScreen || !activeSubmenu) return;
+    if (isMovingTowardsSubmenu()) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setActiveSubmenu(null);
+      }, 250);
+      return;
+    }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setActiveSubmenu(null);
+    }, 100);
+  }, [activeSubmenu, isMovingTowardsSubmenu, isSmallScreen]);
+
   return (
     <div
       ref={menuRef}
@@ -130,7 +225,7 @@ export const ContextMenu: React.FC<Props> = ({
     >
       {/* Pane specific: Create New Items */}
       {target.type === 'pane' && (
-        <div className="py-1">
+        <div className="py-1" onMouseEnter={handleMouseEnterOther}>
           <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
             Neu erstellen
           </div>
@@ -211,7 +306,7 @@ export const ContextMenu: React.FC<Props> = ({
 
       {/* Node specific actions */}
       {target.type === 'node' && target.nodeId && (
-        <div className="py-1">
+        <div className="py-1" onMouseEnter={handleMouseEnterOther}>
           {onEdit && (
             <button
               onClick={() => {
@@ -322,7 +417,7 @@ export const ContextMenu: React.FC<Props> = ({
       )}
 
       {/* Paste actions (Always visible or enabled if something can be pasted) */}
-      <div className="py-1">
+      <div className="py-1" onMouseEnter={handleMouseEnterOther}>
         <button
           onClick={() => {
             onPaste(target.position);
@@ -351,13 +446,14 @@ export const ContextMenu: React.FC<Props> = ({
           {hasExportOptions && (
             <div
               className="relative"
-              onMouseEnter={() => !isSmallScreen && setActiveSubmenu('export')}
-              onMouseLeave={() => !isSmallScreen && setActiveSubmenu(null)}
+              onMouseEnter={() => handleMouseEnterItem('export')}
+              onMouseLeave={handleMouseLeaveItem}
             >
               <button
-                onClick={() =>
-                  setActiveSubmenu((prev) => (prev === 'export' ? null : 'export'))
-                }
+                onClick={() => {
+                  if (timerRef.current) clearTimeout(timerRef.current);
+                  setActiveSubmenu((prev) => (prev === 'export' ? null : 'export'));
+                }}
                 className={`w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors group ${
                   activeSubmenu === 'export'
                     ? 'bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-white'
@@ -383,8 +479,13 @@ export const ContextMenu: React.FC<Props> = ({
               {/* Desktop Flyout Submenu */}
               {!isSmallScreen && activeSubmenu === 'export' && (
                 <div
+                  ref={submenuRef}
+                  onMouseEnter={handleMouseEnterSubmenu}
+                  onMouseLeave={handleMouseLeaveItem}
                   className={`absolute ${openToTop ? 'bottom-0' : 'top-0'} ${
-                    openToLeft ? 'right-full mr-1.5' : 'left-full ml-1.5'
+                    openToLeft
+                      ? 'right-full mr-1.5 before:absolute before:-right-3 before:-top-6 before:-bottom-6 before:w-5 before:content-[""]'
+                      : 'left-full ml-1.5 before:absolute before:-left-3 before:-top-6 before:-bottom-6 before:w-5 before:content-[""]'
                   } w-56 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl backdrop-blur-xl py-1 text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-100 z-50`}
                 >
                   <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
@@ -463,13 +564,14 @@ export const ContextMenu: React.FC<Props> = ({
           {hasImportOptions && (
             <div
               className="relative"
-              onMouseEnter={() => !isSmallScreen && setActiveSubmenu('import')}
-              onMouseLeave={() => !isSmallScreen && setActiveSubmenu(null)}
+              onMouseEnter={() => handleMouseEnterItem('import')}
+              onMouseLeave={handleMouseLeaveItem}
             >
               <button
-                onClick={() =>
-                  setActiveSubmenu((prev) => (prev === 'import' ? null : 'import'))
-                }
+                onClick={() => {
+                  if (timerRef.current) clearTimeout(timerRef.current);
+                  setActiveSubmenu((prev) => (prev === 'import' ? null : 'import'));
+                }}
                 className={`w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors group ${
                   activeSubmenu === 'import'
                     ? 'bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-white'
@@ -495,8 +597,13 @@ export const ContextMenu: React.FC<Props> = ({
               {/* Desktop Flyout Submenu */}
               {!isSmallScreen && activeSubmenu === 'import' && (
                 <div
+                  ref={submenuRef}
+                  onMouseEnter={handleMouseEnterSubmenu}
+                  onMouseLeave={handleMouseLeaveItem}
                   className={`absolute ${openToTop ? 'bottom-0' : 'top-0'} ${
-                    openToLeft ? 'right-full mr-1.5' : 'left-full ml-1.5'
+                    openToLeft
+                      ? 'right-full mr-1.5 before:absolute before:-right-3 before:-top-6 before:-bottom-6 before:w-5 before:content-[""]'
+                      : 'left-full ml-1.5 before:absolute before:-left-3 before:-top-6 before:-bottom-6 before:w-5 before:content-[""]'
                   } w-56 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl backdrop-blur-xl py-1 text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-100 z-50`}
                 >
                   <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
@@ -604,7 +711,7 @@ export const ContextMenu: React.FC<Props> = ({
 
       {/* Delete action (Node only) */}
       {target.type === 'node' && target.nodeId && (
-        <div className="py-1">
+        <div className="py-1" onMouseEnter={handleMouseEnterOther}>
           <button
             onClick={() => {
               onDelete(target.nodeId);
@@ -629,7 +736,7 @@ export const ContextMenu: React.FC<Props> = ({
 
       {/* Delete action (Edge only) */}
       {target.type === 'edge' && target.edgeId && (
-        <div className="py-1">
+        <div className="py-1" onMouseEnter={handleMouseEnterOther}>
           <button
             onClick={() => {
               onDeleteEdge?.(target.edgeId!);
