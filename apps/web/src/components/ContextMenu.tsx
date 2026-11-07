@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Copy,
   ClipboardPaste,
@@ -14,6 +14,12 @@ import {
   Network,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  Download,
+  Upload,
+  FileCode,
+  Coffee,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import type { AlignmentMode } from '@eventflow/core';
 
@@ -21,6 +27,7 @@ export interface ContextMenuTarget {
   type: 'node' | 'pane' | 'edge';
   nodeId?: string;
   nodeKind?: string;
+  modelId?: string;
   edgeId?: string;
   position: { x: number; y: number }; // Flow coordinates (x, y)
   selectedCount?: number;
@@ -45,6 +52,10 @@ interface Props {
   onCreateNote?: (flowPos: { x: number; y: number }) => void;
   onAlign?: (mode: AlignmentMode) => void;
   hasClipboardContent: boolean;
+  onOpenPlantUmlExport?: () => void;
+  onOpenPlantUmlImport?: () => void;
+  onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
+  onOpenAiModal?: () => void;
 }
 
 export const ContextMenu: React.FC<Props> = ({
@@ -65,8 +76,13 @@ export const ContextMenu: React.FC<Props> = ({
   onCreateNote,
   onAlign,
   hasClipboardContent,
+  onOpenPlantUmlExport,
+  onOpenPlantUmlImport,
+  onOpenJavaModal,
+  onOpenAiModal,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [activeSubmenu, setActiveSubmenu] = useState<'export' | 'import' | null>(null);
 
   // Close on outside click or escape key
   useEffect(() => {
@@ -91,12 +107,19 @@ export const ContextMenu: React.FC<Props> = ({
 
   // Adjust coordinates if menu would overflow screen
   const menuWidth = 240;
-  const menuHeight = target.type === 'node' ? 240 : target.type === 'pane' ? 300 : 160;
+  const menuHeight = target.type === 'node' ? 320 : target.type === 'pane' ? 380 : 220;
   const screenW = window.innerWidth;
   const screenH = window.innerHeight;
 
   const posX = Math.min(x, screenW - menuWidth - 10);
   const posY = Math.min(y, screenH - menuHeight - 10);
+
+  const openToLeft = posX + menuWidth + 230 > screenW;
+  const openToTop = posY + 200 > screenH;
+  const isSmallScreen = screenW < 520;
+
+  const hasExportOptions = Boolean(onOpenPlantUmlExport || onOpenJavaModal);
+  const hasImportOptions = Boolean(onOpenPlantUmlImport || onOpenJavaModal || onOpenAiModal);
 
   return (
     <div
@@ -320,6 +343,264 @@ export const ContextMenu: React.FC<Props> = ({
           </kbd>
         </button>
       </div>
+
+      {/* Import & Export Sections */}
+      {(hasExportOptions || hasImportOptions) && (
+        <div className="py-1">
+          {/* Oberpunkt: Export */}
+          {hasExportOptions && (
+            <div
+              className="relative"
+              onMouseEnter={() => !isSmallScreen && setActiveSubmenu('export')}
+              onMouseLeave={() => !isSmallScreen && setActiveSubmenu(null)}
+            >
+              <button
+                onClick={() =>
+                  setActiveSubmenu((prev) => (prev === 'export' ? null : 'export'))
+                }
+                className={`w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors group ${
+                  activeSubmenu === 'export'
+                    ? 'bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-white'
+                    : ''
+                }`}
+                title="Datenmodelle und Diagramme exportieren"
+              >
+                <div className="flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                  <span className="font-medium">Export</span>
+                </div>
+                {isSmallScreen ? (
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                      activeSubmenu === 'export' ? 'rotate-180' : ''
+                    }`}
+                  />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                )}
+              </button>
+
+              {/* Desktop Flyout Submenu */}
+              {!isSmallScreen && activeSubmenu === 'export' && (
+                <div
+                  className={`absolute ${openToTop ? 'bottom-0' : 'top-0'} ${
+                    openToLeft ? 'right-full mr-1.5' : 'left-full ml-1.5'
+                  } w-56 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl backdrop-blur-xl py-1 text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-100 z-50`}
+                >
+                  <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                    Exportieren als
+                  </div>
+                  {onOpenPlantUmlExport && (
+                    <button
+                      onClick={() => {
+                        onOpenPlantUmlExport();
+                        onClose();
+                      }}
+                      className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-200 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+                    >
+                      <div className="w-6 h-6 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                        <FileCode className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs">PlantUML</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">Diagramm (*.puml)</span>
+                      </div>
+                    </button>
+                  )}
+                  {onOpenJavaModal && (
+                    <button
+                      onClick={() => {
+                        onOpenJavaModal('export', target.modelId);
+                        onClose();
+                      }}
+                      className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-700 dark:text-slate-200 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
+                    >
+                      <div className="w-6 h-6 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                        <Coffee className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs">Java Code</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">Records & POJO Klassen</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Mobile Inline Expansion */}
+              {isSmallScreen && activeSubmenu === 'export' && (
+                <div className="bg-slate-50 dark:bg-slate-950/50 py-1 pl-4 border-l-2 border-blue-500/50 my-1 space-y-0.5">
+                  {onOpenPlantUmlExport && (
+                    <button
+                      onClick={() => {
+                        onOpenPlantUmlExport();
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-purple-50 dark:hover:bg-purple-950/40 text-xs text-slate-700 dark:text-slate-200 hover:text-purple-700 dark:hover:text-purple-300"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-purple-500" />
+                      <span>PlantUML (*.puml)</span>
+                    </button>
+                  )}
+                  {onOpenJavaModal && (
+                    <button
+                      onClick={() => {
+                        onOpenJavaModal('export', target.modelId);
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 text-xs text-slate-700 dark:text-slate-200 hover:text-amber-800 dark:hover:text-amber-300"
+                    >
+                      <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Java Records & Klassen</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Oberpunkt: Import */}
+          {hasImportOptions && (
+            <div
+              className="relative"
+              onMouseEnter={() => !isSmallScreen && setActiveSubmenu('import')}
+              onMouseLeave={() => !isSmallScreen && setActiveSubmenu(null)}
+            >
+              <button
+                onClick={() =>
+                  setActiveSubmenu((prev) => (prev === 'import' ? null : 'import'))
+                }
+                className={`w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors group ${
+                  activeSubmenu === 'import'
+                    ? 'bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-white'
+                    : ''
+                }`}
+                title="Datenmodelle und Diagramme importieren"
+              >
+                <div className="flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+                  <span className="font-medium">Import</span>
+                </div>
+                {isSmallScreen ? (
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                      activeSubmenu === 'import' ? 'rotate-180' : ''
+                    }`}
+                  />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                )}
+              </button>
+
+              {/* Desktop Flyout Submenu */}
+              {!isSmallScreen && activeSubmenu === 'import' && (
+                <div
+                  className={`absolute ${openToTop ? 'bottom-0' : 'top-0'} ${
+                    openToLeft ? 'right-full mr-1.5' : 'left-full ml-1.5'
+                  } w-56 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl backdrop-blur-xl py-1 text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-100 z-50`}
+                >
+                  <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                    Importieren von
+                  </div>
+                  {onOpenPlantUmlImport && (
+                    <button
+                      onClick={() => {
+                        onOpenPlantUmlImport();
+                        onClose();
+                      }}
+                      className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-200 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+                    >
+                      <div className="w-6 h-6 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                        <FileCode className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs">PlantUML</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">*.puml Datei oder Code</span>
+                      </div>
+                    </button>
+                  )}
+                  {onOpenJavaModal && (
+                    <button
+                      onClick={() => {
+                        onOpenJavaModal('import');
+                        onClose();
+                      }}
+                      className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-700 dark:text-slate-200 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
+                    >
+                      <div className="w-6 h-6 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                        <Coffee className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs">Java Quellcode</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">Records & Klassen (*.java)</span>
+                      </div>
+                    </button>
+                  )}
+                  {onOpenAiModal && (
+                    <button
+                      onClick={() => {
+                        onOpenAiModal();
+                        onClose();
+                      }}
+                      className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-200 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+                    >
+                      <div className="w-6 h-6 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs">KI-Assistent</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">Lokale KI (Open WebUI)</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Mobile Inline Expansion */}
+              {isSmallScreen && activeSubmenu === 'import' && (
+                <div className="bg-slate-50 dark:bg-slate-950/50 py-1 pl-4 border-l-2 border-emerald-500/50 my-1 space-y-0.5">
+                  {onOpenPlantUmlImport && (
+                    <button
+                      onClick={() => {
+                        onOpenPlantUmlImport();
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-purple-50 dark:hover:bg-purple-950/40 text-xs text-slate-700 dark:text-slate-200 hover:text-purple-700 dark:hover:text-purple-300"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-purple-500" />
+                      <span>PlantUML Code / Datei</span>
+                    </button>
+                  )}
+                  {onOpenJavaModal && (
+                    <button
+                      onClick={() => {
+                        onOpenJavaModal('import');
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 text-xs text-slate-700 dark:text-slate-200 hover:text-amber-800 dark:hover:text-amber-300"
+                    >
+                      <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Java Quellcode</span>
+                    </button>
+                  )}
+                  {onOpenAiModal && (
+                    <button
+                      onClick={() => {
+                        onOpenAiModal();
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-purple-50 dark:hover:bg-purple-950/40 text-xs text-slate-700 dark:text-slate-200 hover:text-purple-700 dark:hover:text-purple-300"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                      <span>KI-Assistent (Open WebUI)</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Delete action (Node only) */}
       {target.type === 'node' && target.nodeId && (

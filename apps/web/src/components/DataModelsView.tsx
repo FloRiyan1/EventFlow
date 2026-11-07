@@ -877,6 +877,8 @@ interface FreeModelCanvasInnerProps {
   boardId: string;
   onEditModel: (modelId: string) => void;
   onShowToast?: (msg: string) => void;
+  onOpenPlantUmlExport?: () => void;
+  onOpenPlantUmlImport?: () => void;
   onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
   onOpenAiModal?: () => void;
 }
@@ -885,6 +887,8 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   boardId,
   onEditModel,
   onShowToast,
+  onOpenPlantUmlExport,
+  onOpenPlantUmlImport,
   onOpenJavaModal,
   onOpenAiModal,
 }) => {
@@ -1576,7 +1580,9 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           });
           const nodeData = board.nodes.find((n) => n.id === node.id);
           let hasSubModels = false;
+          let targetModelId: string | undefined = undefined;
           if (nodeData && nodeData.kind === 'model') {
+            targetModelId = nodeData.modelId;
             const info = getModelHierarchyInfo(project, nodeData.modelId);
             hasSubModels = info.subModels.length > 0;
           }
@@ -1587,6 +1593,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
               type: 'node',
               nodeId: node.id,
               nodeKind: node.type,
+              modelId: targetModelId,
               position: flowPos,
               selectedCount: newSelected.length,
               hasSubModels,
@@ -1737,6 +1744,10 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           }}
           onAlign={handleAlign}
           hasClipboardContent={false}
+          onOpenPlantUmlExport={onOpenPlantUmlExport}
+          onOpenPlantUmlImport={onOpenPlantUmlImport}
+          onOpenJavaModal={onOpenJavaModal}
+          onOpenAiModal={onOpenAiModal}
         />
       )}
     </div>
@@ -1750,8 +1761,8 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   viewMode: propViewMode,
   onViewModeChange,
   onEditModel,
-  onOpenPlantUmlExport: _onOpenPlantUmlExport,
-  onOpenPlantUmlImport: _onOpenPlantUmlImport,
+  onOpenPlantUmlExport,
+  onOpenPlantUmlImport,
   onOpenJavaModal,
   onOpenAiModal,
   onShowToast,
@@ -1777,6 +1788,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   const [erdFilterModelId, setErdFilterModelId] = useState<string | 'all'>('all');
   const [erdIncludeParents, setErdIncludeParents] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
+  const [erdContextMenu, setErdContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [layoutSeed, setLayoutSeed] = useState(0);
 
   // Model board renaming state
@@ -2377,6 +2389,8 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   boardId={activeModelBoard.id}
                   onEditModel={onEditModel}
                   onShowToast={onShowToast}
+                  onOpenPlantUmlExport={onOpenPlantUmlExport}
+                  onOpenPlantUmlImport={onOpenPlantUmlImport}
                   onOpenJavaModal={onOpenJavaModal}
                   onOpenAiModal={onOpenAiModal}
                 />
@@ -2605,6 +2619,10 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                 nodeTypes={erdNodeTypes}
                 onNodesChange={onErdNodesChange}
                 onEdgesChange={onErdEdgesChange}
+                onPaneContextMenu={(event) => {
+                  event.preventDefault();
+                  setErdContextMenu({ x: event.clientX, y: event.clientY });
+                }}
                 fitView
                 fitViewOptions={{ padding: 0.25 }}
                 elevateEdgesOnSelect
@@ -2624,6 +2642,25 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                 />
               </ReactFlow>
             </ReactFlowProvider>
+
+            {/* ERD Context Menu */}
+            {erdContextMenu && (
+              <ContextMenu
+                x={erdContextMenu.x}
+                y={erdContextMenu.y}
+                target={{ type: 'pane', position: { x: 0, y: 0 } }}
+                onClose={() => setErdContextMenu(null)}
+                onCopy={() => {}}
+                onPaste={() => {}}
+                onDuplicate={() => {}}
+                onDelete={() => {}}
+                hasClipboardContent={false}
+                onOpenPlantUmlExport={onOpenPlantUmlExport}
+                onOpenPlantUmlImport={onOpenPlantUmlImport}
+                onOpenJavaModal={onOpenJavaModal}
+                onOpenAiModal={onOpenAiModal}
+              />
+            )}
 
             {showLegend && (
               <div className="absolute bottom-6 left-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-lg text-xs space-y-1.5 pointer-events-none transition-all z-20">

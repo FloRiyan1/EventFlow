@@ -880,9 +880,11 @@ const CanvasInner: React.FC<{
             }
             const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
             let hasSubModels = false;
+            let targetModelId: string | undefined = undefined;
             if (node.type === 'model') {
               const nodeData = activeBoard.nodes.find((n) => n.id === node.id);
               if (nodeData && nodeData.kind === 'model') {
+                targetModelId = nodeData.modelId;
                 const info = getModelHierarchyInfo(project, nodeData.modelId);
                 hasSubModels = info.subModels.length > 0;
               }
@@ -891,6 +893,7 @@ const CanvasInner: React.FC<{
               type: 'node',
               nodeId: node.id,
               nodeKind: node.type,
+              modelId: targetModelId,
               position: flowPos,
               selectedCount: newSelected.length,
               hasSubModels,
@@ -1717,6 +1720,10 @@ const AppContent: React.FC = () => {
                 onCreateNote={handleCreateNote}
                 onAlign={handleAlignSelection}
                 hasClipboardContent={copiedNodes.length > 0}
+                onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
+                onOpenPlantUmlImport={() => handleOpenPlantUml('import')}
+                onOpenJavaModal={(tab, modelId) => handleOpenJavaModal(tab, modelId ?? null)}
+                onOpenAiModal={handleOpenAiModal}
               />
             )}
           </main>
