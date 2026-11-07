@@ -1,0 +1,10 @@
+node_modules
+.git
+.github
+dist
+apps/web/dist
+packages/core/dist
+EventFlow.exe
+EventFlow.zip
+.env*
+npm-debug.log*
