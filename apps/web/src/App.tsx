@@ -41,6 +41,8 @@ import {
   triggerHandleId,
   createModel,
   createEndpoint,
+  createModelBoard,
+  computeErdLayout,
   getModelHierarchyInfo,
   insertModelWithSubModels,
   insertSubModelsForNode,
@@ -1009,6 +1011,51 @@ const AppContent: React.FC = () => {
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'flows' | 'models'>('flows');
+  const lastFlowBoardIdRef = useRef<string | null>(null);
+  const lastModelBoardIdRef = useRef<string | null>(null);
+
+  const handleSelectView = useCallback(
+    (view: 'flows' | 'models') => {
+      if (view === activeView) return;
+      if (view === 'models') {
+        lastFlowBoardIdRef.current = activeBoardId;
+        // Find existing model board or create initial model board
+        let mBoard = project.boards.find((b) => b.kind === 'model');
+        if (!mBoard) {
+          const newMBoard = createModelBoard('Datenmodell 1');
+          if (project.models.length > 0) {
+            const layout = computeErdLayout(project.models);
+            newMBoard.nodes = project.models.map((m) => ({
+              id: uid('n_'),
+              kind: 'model',
+              modelId: m.id,
+              position: layout.get(m.id) || { x: 100, y: 100 },
+            }));
+          }
+          store.update((draft) => {
+            draft.boards.push(newMBoard);
+          });
+          mBoard = newMBoard;
+        }
+        const targetModelId =
+          lastModelBoardIdRef.current &&
+          project.boards.some((b) => b.id === lastModelBoardIdRef.current && b.kind === 'model')
+            ? lastModelBoardIdRef.current
+            : mBoard.id;
+        store.setActiveBoard(targetModelId);
+      } else {
+        lastModelBoardIdRef.current = activeBoardId;
+        const targetFlowId =
+          lastFlowBoardIdRef.current &&
+          project.boards.some((b) => b.id === lastFlowBoardIdRef.current && b.kind !== 'model')
+            ? lastFlowBoardIdRef.current
+            : project.boards.find((b) => b.kind !== 'model')?.id || project.boards[0].id;
+        store.setActiveBoard(targetFlowId);
+      }
+      setActiveView(view);
+    },
+    [activeView, activeBoardId, project.boards, project.models, store]
+  );
   const [plantUmlModalOpen, setPlantUmlModalOpen] = useState(false);
   const [plantUmlModalTab, setPlantUmlModalTab] = useState<'export' | 'import'>('export');
   const [javaModalOpen, setJavaModalOpen] = useState(false);
@@ -1603,7 +1650,7 @@ const AppContent: React.FC = () => {
       {/* Top Navigation */}
       <TopBar
         activeView={activeView}
-        onSelectView={setActiveView}
+        onSelectView={handleSelectView}
         onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
         onOpenPlantUmlModal={handleOpenPlantUml}
         onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
@@ -1619,7 +1666,7 @@ const AppContent: React.FC = () => {
           <Sidebar
             onEditModel={(id) => setEditingModelId(id)}
             onEditEndpoint={(id) => setEditingEndpointId(id)}
-            onOpenDataModelsView={() => setActiveView('models')}
+            onOpenDataModelsView={() => handleSelectView('models')}
             onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
           />
 

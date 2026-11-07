@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -14,10 +14,15 @@ import {
   Position,
   useNodesState,
   useEdgesState,
+  SelectionMode,
+  OnConnect,
+  Connection,
 } from '@xyflow/react';
 import { useStore, useEditorStore } from '../storeContext';
 import {
   createModel,
+  createModelBoard,
+  deleteBoard,
   deleteModel,
   modelUsages,
   getModelHierarchyInfo,
@@ -25,10 +30,16 @@ import {
   referencedTypeNames,
   reorderModelField,
   sortModelFields,
+  computeErdLayout,
+  calculateAlignmentSnap,
+  snapToGridValue,
+  alignNodes,
   uid,
   type Model,
   type FieldSortCriterion,
   type Project,
+  type AlignmentGuideLine,
+  type AlignmentMode,
 } from '@eventflow/core';
 import {
   Database,
@@ -53,10 +64,26 @@ import {
   Workflow,
   Filter,
   RotateCcw,
-  Maximize2,
   Coffee,
+  PanelLeftClose,
+  PanelLeft,
+  Hand,
+  BoxSelect,
+  Magnet,
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
+  MapPin,
+  FileText,
+  GripVertical,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
+import { useCollaboration } from '../collaborationContext';
+import { ModelNode } from '../nodes/ModelNode';
+import { NoteNode } from '../nodes/NoteNode';
+import { StepWithDeleteEdge } from '../edges/StepWithDeleteEdge';
+import { AlignmentGuideLines } from './AlignmentGuideLines';
+import { MultiplayerCursors } from './MultiplayerCursors';
+import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
 
 interface DataModelsViewProps {
   onEditModel: (modelId: string) => void;
@@ -66,7 +93,9 @@ interface DataModelsViewProps {
   onShowToast?: (msg: string) => void;
 }
 
-// Custom Node for the ERD Canvas mode
+// -----------------------------------------------------------------------------
+// ERD Node Types (For the Auto-Layout Diagram view)
+// -----------------------------------------------------------------------------
 const ErdModelNode: React.FC<{
   data: {
     model: Model;
@@ -224,6 +253,19 @@ const erdNodeTypes = {
   erdModel: ErdModelNode,
 };
 
+// -----------------------------------------------------------------------------
+// Free Model Canvas Node & Edge Types
+// -----------------------------------------------------------------------------
+const freeCanvasNodeTypes = {
+  model: ModelNode,
+  note: NoteNode,
+};
+
+const freeCanvasEdgeTypes = {
+  step: StepWithDeleteEdge,
+  default: StepWithDeleteEdge,
+};
+
 // Recursive Model Card component for Tree/Hierarchy view
 interface TreeModelCardProps {
   model: Model;
@@ -287,13 +329,12 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
     if (onShowToast) {
       onShowToast(
         includeSubModels
-          ? `✨ "${model.name}" und ${count - 1} Untermodelle aufs Flow-Board eingefügt!`
-          : `✓ "${model.name}" aufs Flow-Board eingefügt!`
+          ? `✨ "${model.name}" und ${count - 1} Untermodelle aufs Board eingefügt!`
+          : `✓ "${model.name}" aufs Board eingefügt!`
       );
     }
   };
 
-  // New field inline creation state
   const [isAddingField, setIsAddingField] = useState(false);
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState('String');
@@ -352,7 +393,6 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
     return new Map(allModels.map((m) => [m.name, m]));
   }, [allModels]);
 
-  // Track visited to prevent infinite loop on circular model hierarchies
   const nextVisited = useMemo(() => {
     const s = new Set(visitedModelIds);
     s.add(model.id);
@@ -437,17 +477,17 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
           <button
             onClick={() => handleInsertToBoard(false)}
             className="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
-            title="Dieses Model auf dem aktuellen Flow-Board platzieren"
+            title="Dieses Model auf das Modell-Canvas platzieren"
           >
             <Workflow className="w-3.5 h-3.5 text-amber-500" />
-            <span className="hidden sm:inline">Aufs Board</span>
+            <span className="hidden sm:inline">Aufs Canvas</span>
           </button>
 
           {hierarchy.subModels.length > 0 && (
             <button
               onClick={() => handleInsertToBoard(true)}
               className="px-2 py-1 rounded-lg text-xs font-semibold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/60 border border-orange-300 dark:border-orange-800/60 flex items-center gap-1 transition-colors"
-              title={`"${model.name}" inklusive aller ${hierarchy.subModels.length} Untermodelle auf dem aktuellen Flow-Board platzieren`}
+              title={`"${model.name}" inklusive aller ${hierarchy.subModels.length} Untermodelle auf dem Canvas platzieren`}
             >
               <Network className="w-3.5 h-3.5 text-orange-500" />
               <span>+ Inkl. Untermodelle</span>
@@ -774,12 +814,6 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
   );
 };
 
-// Estimate model node height dynamically based on field count
-function estimateModelHeight(m: Model): number {
-  const count = Math.min(m.fields.length, 12);
-  return 100 + Math.max(1, count) * 26;
-}
-
 // Collect a model's subtree (and optionally parent models)
 function collectSubtreeModelIds(
   project: Project,
@@ -834,391 +868,867 @@ function collectSubtreeModelIds(
   return result;
 }
 
-// Layered, collision-free layout for ERD nodes
-function computeErdLayout(models: Model[]): Map<string, { x: number; y: number }> {
-  const modelMap = new Map(models.map((m) => [m.name, m]));
-  const idMap = new Map(models.map((m) => [m.id, m]));
-  const outgoing = new Map<string, string[]>();
-  const incoming = new Map<string, string[]>();
-
-  models.forEach((m) => {
-    outgoing.set(m.id, []);
-    incoming.set(m.id, []);
-  });
-
-  models.forEach((m) => {
-    for (const f of m.fields) {
-      for (const refName of referencedTypeNames(f.type)) {
-        const target = modelMap.get(refName);
-        if (target && !outgoing.get(m.id)!.includes(target.id)) {
-          outgoing.get(m.id)!.push(target.id);
-          incoming.get(target.id)!.push(m.id);
-        }
-      }
-    }
-  });
-
-  // Find weakly connected components
-  const visited = new Set<string>();
-  const components: string[][] = [];
-
-  for (const m of models) {
-    if (visited.has(m.id)) continue;
-    const comp: string[] = [];
-    const queue = [m.id];
-    visited.add(m.id);
-
-    while (queue.length > 0) {
-      const curr = queue.shift()!;
-      comp.push(curr);
-      const neighbors = [...outgoing.get(curr)!, ...incoming.get(curr)!];
-      for (const n of neighbors) {
-        if (!visited.has(n)) {
-          visited.add(n);
-          queue.push(n);
-        }
-      }
-    }
-    components.push(comp);
-  }
-
-  const positions = new Map<string, { x: number; y: number }>();
-  const nodeWidth = 280;
-  const nodeGapX = 90;
-  const layerGapY = 130;
-  const compGapX = 140;
-
-  let currentCompStartX = 80;
-  let currentCompStartY = 80;
-  let maxRowHeight = 0;
-
-  for (const compNodeIds of components) {
-    const compModels = compNodeIds.map((id) => idMap.get(id)!);
-    let compRoots = compModels.filter(
-      (m) => incoming.get(m.id)!.filter((id) => compNodeIds.includes(id)).length === 0
-    );
-    if (compRoots.length === 0) compRoots = [compModels[0]];
-
-    const layers = new Map<string, number>();
-    compRoots.forEach((r) => layers.set(r.id, 0));
-
-    let queue = [...compRoots.map((r) => r.id)];
-    const visitedInComp = new Set(queue);
-
-    while (queue.length > 0) {
-      const u = queue.shift()!;
-      const uLayer = layers.get(u) || 0;
-      for (const v of outgoing.get(u)!) {
-        if (!compNodeIds.includes(v)) continue;
-        const currentVLayer = layers.get(v) || 0;
-        if (uLayer + 1 > currentVLayer) {
-          layers.set(v, uLayer + 1);
-        }
-        if (!visitedInComp.has(v)) {
-          visitedInComp.add(v);
-          queue.push(v);
-        }
-      }
-    }
-
-    compModels.forEach((m) => {
-      if (!layers.has(m.id)) layers.set(m.id, 0);
-    });
-
-    const layerGroups = new Map<number, Model[]>();
-    compModels.forEach((m) => {
-      const l = layers.get(m.id)!;
-      if (!layerGroups.has(l)) layerGroups.set(l, []);
-      layerGroups.get(l)!.push(m);
-    });
-
-    const maxLayer = Math.max(...Array.from(layerGroups.keys()));
-
-    const layerY = new Map<number, number>();
-    let compHeight = 0;
-    let currY = currentCompStartY;
-    for (let l = 0; l <= maxLayer; l++) {
-      layerY.set(l, currY);
-      const group = layerGroups.get(l) || [];
-      const maxHeightInLayer = Math.max(
-        ...group.map((m) => estimateModelHeight(m)),
-        140
-      );
-      currY += maxHeightInLayer + layerGapY;
-      compHeight = currY - currentCompStartY;
-    }
-
-    let maxNodesInLayer = 1;
-    for (let l = 0; l <= maxLayer; l++) {
-      const count = (layerGroups.get(l) || []).length;
-      if (count > maxNodesInLayer) maxNodesInLayer = count;
-    }
-
-    const compTotalWidth = maxNodesInLayer * nodeWidth + (maxNodesInLayer - 1) * nodeGapX;
-
-    // Wrap to next component row if canvas gets excessively wide
-    if (currentCompStartX + compTotalWidth > 2600 && currentCompStartX > 80) {
-      currentCompStartX = 80;
-      currentCompStartY += maxRowHeight + 140;
-      maxRowHeight = 0;
-      let recalcY = currentCompStartY;
-      for (let l = 0; l <= maxLayer; l++) {
-        layerY.set(l, recalcY);
-        const group = layerGroups.get(l) || [];
-        const maxHeightInLayer = Math.max(
-          ...group.map((m) => estimateModelHeight(m)),
-          140
-        );
-        recalcY += maxHeightInLayer + layerGapY;
-      }
-    }
-
-    if (compHeight > maxRowHeight) {
-      maxRowHeight = compHeight;
-    }
-
-    for (let l = 0; l <= maxLayer; l++) {
-      const group = layerGroups.get(l) || [];
-      const layerTotalWidth = group.length * nodeWidth + (group.length - 1) * nodeGapX;
-      const layerOffset = (compTotalWidth - layerTotalWidth) / 2;
-
-      group.forEach((m, idx) => {
-        const x = currentCompStartX + layerOffset + idx * (nodeWidth + nodeGapX);
-        const y = layerY.get(l)!;
-        positions.set(m.id, { x: Math.round(x), y: Math.round(y) });
-      });
-    }
-
-    currentCompStartX += compTotalWidth + compGapX;
-  }
-
-  // Safety collision check pass
-  const entries = Array.from(positions.entries());
-  for (let i = 0; i < entries.length; i++) {
-    for (let j = i + 1; j < entries.length; j++) {
-      const [idA, posA] = entries[i];
-      const [idB, posB] = entries[j];
-      const modelA = idMap.get(idA)!;
-      const modelB = idMap.get(idB)!;
-      const hA = estimateModelHeight(modelA);
-      const hB = estimateModelHeight(modelB);
-
-      const overlapX = Math.abs(posA.x - posB.x) < nodeWidth + 40;
-      const overlapY = Math.abs(posA.y - posB.y) < Math.max(hA, hB) + 40;
-
-      if (overlapX && overlapY) {
-        posB.x = posA.x + nodeWidth + nodeGapX;
-        positions.set(idB, posB);
-      }
-    }
-  }
-
-  return positions;
+// -----------------------------------------------------------------------------
+// Free Model Canvas Inner Component (Active ReactFlow Canvas)
+// -----------------------------------------------------------------------------
+interface FreeModelCanvasInnerProps {
+  boardId: string;
+  onEditModel: (modelId: string) => void;
+  onShowToast?: (msg: string) => void;
+  onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
 }
 
-interface ErdCanvasInnerProps {
-  nodes: Node[];
-  edges: Edge[];
-  onNodesChange: any;
-  onEdgesChange: any;
-  theme: string;
-  erdFilterModelId: string | 'all';
-  erdIncludeParents: boolean;
-  onResetLayout: () => void;
-  showLegend: boolean;
-  onToggleLegend: () => void;
-  allModels: Model[];
-  rootModels: Model[];
-  subModels: Model[];
-  onSelectFilter: (id: string | 'all') => void;
-  onToggleIncludeParents: () => void;
-}
-
-const ErdCanvasInner: React.FC<ErdCanvasInnerProps> = ({
-  nodes,
-  edges,
-  onNodesChange,
-  onEdgesChange,
-  theme,
-  erdFilterModelId,
-  erdIncludeParents,
-  onResetLayout,
-  showLegend,
-  onToggleLegend,
-  allModels,
-  rootModels,
-  subModels,
-  onSelectFilter,
-  onToggleIncludeParents,
+const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
+  boardId,
+  onEditModel,
+  onShowToast,
+  onOpenJavaModal,
 }) => {
-  const { fitView } = useReactFlow();
+  const store = useEditorStore();
+  const project = useStore((s) => s.project);
+  const { theme } = useTheme();
+  const { manager } = useCollaboration();
+  const { screenToFlowPosition, fitView } = useReactFlow();
 
-  // Auto-fit when filter or nodes change
+  const board = useMemo(() => {
+    return project.boards.find((b) => b.id === boardId) ?? project.boards[0];
+  }, [project.boards, boardId]);
+
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [isSnapEnabled, setIsSnapEnabled] = useState(true);
+  const [guideLines, setGuideLines] = useState<{
+    vertical: AlignmentGuideLine | null;
+    horizontal: AlignmentGuideLine | null;
+  }>({ vertical: null, horizontal: null });
+
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    target: ContextMenuTarget;
+  } | null>(null);
+
+  const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 300, y: 300 });
+
+  const triggerPing = useCallback(
+    (flowPos?: { x: number; y: number }) => {
+      const pos = flowPos || lastMousePosRef.current;
+      manager.broadcastPing(pos.x, pos.y, boardId);
+      onShowToast?.('📍 Ping auf Modell-Canvas gesendet!');
+    },
+    [manager, boardId, onShowToast]
+  );
+
+  // Key shortcut for canvas ping ('P')
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitView({ padding: 0.25, duration: 400 });
-    }, 60);
-    return () => clearTimeout(timer);
-  }, [erdFilterModelId, erdIncludeParents, nodes.length, fitView]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (document.activeElement?.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        triggerPing();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [triggerPing]);
 
-  const focusedModel = useMemo(
-    () => allModels.find((m) => m.id === erdFilterModelId),
-    [allModels, erdFilterModelId]
+  // Transform domain nodes into ReactFlow nodes
+  const rfNodes = useMemo<Node[]>(() => {
+    return board.nodes.map((node) => {
+      let injectedData: Record<string, unknown> = { ...node };
+      if (node.kind === 'model') {
+        const m = project.models.find((item) => item.id === node.modelId);
+        injectedData = {
+          ...node,
+          model: m,
+          fields: m ? [...m.fields] : [],
+        };
+      }
+      return {
+        id: node.id,
+        type: node.kind,
+        position: node.position,
+        data: injectedData,
+        style: {
+          width: node.width ?? undefined,
+          height: node.height ?? undefined,
+        },
+      };
+    });
+  }, [board.nodes, project.models]);
+
+  // Transform domain edges into ReactFlow edges
+  const rfEdges = useMemo<Edge[]>(() => {
+    return board.edges.map((edge) => ({
+      id: edge.id,
+      type: 'step',
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || 'bottom',
+      targetHandle: edge.targetHandle || 'top',
+      label: edge.label || undefined,
+      selected: edge.id === selectedEdgeId,
+      style: { stroke: '#f97316', strokeWidth: 2 },
+      animated: true,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: '#f97316',
+        width: 14,
+        height: 14,
+      },
+    }));
+  }, [board.edges, selectedEdgeId]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  useEffect(() => {
+    setNodes((prevNodes) => {
+      const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
+      return rfNodes.map((newNode) => {
+        const prev = prevMap.get(newNode.id);
+        if (!prev) {
+          return {
+            ...newNode,
+            selected: selectedNodeIds.includes(newNode.id),
+          };
+        }
+        return {
+          ...newNode,
+          selected: prev.selected ?? selectedNodeIds.includes(newNode.id),
+          measured: prev.measured,
+          style: {
+            ...newNode.style,
+            width: newNode.style?.width ?? prev.style?.width,
+            height: newNode.style?.height ?? prev.style?.height,
+          },
+        };
+      });
+    });
+  }, [rfNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges(rfEdges);
+  }, [rfEdges, setEdges]);
+
+  // Sync external selection into nodes state smoothly
+  useEffect(() => {
+    setNodes((prevNodes) => {
+      let changed = false;
+      const updated = prevNodes.map((n) => {
+        const isSelected = selectedNodeIds.includes(n.id);
+        if (n.selected === isSelected) return n;
+        changed = true;
+        return { ...n, selected: isSelected };
+      });
+      return changed ? updated : prevNodes;
+    });
+  }, [selectedNodeIds, setNodes]);
+
+  // Connecting model nodes
+  const onConnect: OnConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      const newEdgeId = uid('e_');
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (!b) return;
+
+        // Check if edge already exists
+        const exists = b.edges.some(
+          (e) => e.source === connection.source && e.target === connection.target
+        );
+        if (exists) return;
+
+        b.edges.push({
+          id: newEdgeId,
+          source: connection.source,
+          target: connection.target,
+          sourceHandle: connection.sourceHandle || 'bottom',
+          targetHandle: connection.targetHandle || 'top',
+          kind: 'flow',
+          label: '',
+        });
+      });
+      onShowToast?.('🔗 Beziehung zwischen Modellen verbunden!');
+    },
+    [store, boardId, onShowToast]
+  );
+
+  // Moving nodes with snap to grid and alignment guides
+  const handleNodesChange = useCallback(
+    (changes: any[]) => {
+      if (isSnapEnabled) {
+        const draggingChanges = changes.filter(
+          (c) => c.type === 'position' && c.dragging && c.position
+        );
+
+        if (draggingChanges.length === 1) {
+          const change = draggingChanges[0];
+          const draggedNode = nodes.find((n) => n.id === change.id);
+
+          if (draggedNode && change.position) {
+            const candidate = {
+              ...draggedNode,
+              position: change.position,
+            };
+
+            const otherNodes = nodes.filter((n) => n.id !== change.id);
+            const snapRes = calculateAlignmentSnap(candidate, otherNodes, 10);
+
+            let nextX = snapRes.x;
+            let nextY = snapRes.y;
+
+            if (!snapRes.verticalLine) {
+              nextX = snapToGridValue(nextX, 20);
+            }
+            if (!snapRes.horizontalLine) {
+              nextY = snapToGridValue(nextY, 20);
+            }
+
+            change.position = { x: nextX, y: nextY };
+            setGuideLines({
+              vertical: snapRes.verticalLine,
+              horizontal: snapRes.horizontalLine,
+            });
+          }
+        } else if (draggingChanges.length > 1) {
+          for (const change of draggingChanges) {
+            if (change.position) {
+              change.position = {
+                x: snapToGridValue(change.position.x, 20),
+                y: snapToGridValue(change.position.y, 20),
+              };
+            }
+          }
+          if (guideLines.vertical || guideLines.horizontal) {
+            setGuideLines({ vertical: null, horizontal: null });
+          }
+        } else {
+          if (guideLines.vertical || guideLines.horizontal) {
+            setGuideLines({ vertical: null, horizontal: null });
+          }
+        }
+      } else {
+        if (guideLines.vertical || guideLines.horizontal) {
+          setGuideLines({ vertical: null, horizontal: null });
+        }
+      }
+
+      onNodesChange(changes);
+    },
+    [isSnapEnabled, nodes, onNodesChange, guideLines]
+  );
+
+  // Node drag stop: persist position to history
+  const handleNodesMoved = useCallback(
+    (movedNodes: Node[]) => {
+      if (!movedNodes || movedNodes.length === 0) return;
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (!b) return;
+        for (const moved of movedNodes) {
+          const targetNode = b.nodes.find((n) => n.id === moved.id);
+          if (targetNode) {
+            targetNode.position = {
+              x: Math.round(moved.position.x),
+              y: Math.round(moved.position.y),
+            };
+          }
+        }
+      });
+    },
+    [store, boardId]
+  );
+
+  const onNodeDragStop = useCallback(
+    (_: unknown, node: Node, movedNodes: Node[]) => {
+      setGuideLines({ vertical: null, horizontal: null });
+      handleNodesMoved(movedNodes && movedNodes.length > 0 ? movedNodes : [node]);
+    },
+    [handleNodesMoved]
+  );
+
+  const onSelectionDragStop = useCallback(
+    (_: unknown, movedNodes: Node[]) => {
+      setGuideLines({ vertical: null, horizontal: null });
+      handleNodesMoved(movedNodes);
+    },
+    [handleNodesMoved]
+  );
+
+  // Drag-and-drop from models sidebar onto canvas
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+
+      const rawData = e.dataTransfer.getData('application/eventflow');
+      if (rawData) {
+        try {
+          const item = JSON.parse(rawData);
+          if (item.type === 'model') {
+            const newNodeId = uid('n_');
+            store.update((draft) => {
+              const b = draft.boards.find((item) => item.id === boardId);
+              if (!b) return;
+
+              // Check if already on board
+              const existing = b.nodes.find(
+                (n) => n.kind === 'model' && n.modelId === item.id
+              );
+              if (existing) {
+                existing.position = {
+                  x: Math.round(flowPos.x),
+                  y: Math.round(flowPos.y),
+                };
+                return;
+              }
+
+              b.nodes.push({
+                id: newNodeId,
+                kind: 'model',
+                modelId: item.id,
+                position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+              });
+            });
+            setSelectedNodeIds([newNodeId]);
+            onShowToast?.(`✓ Model "${item.name}" platziert!`);
+            return;
+          }
+        } catch (_) {}
+      }
+    },
+    [screenToFlowPosition, store, boardId, onShowToast]
+  );
+
+  // Auto-Arrange: One-click neat layout using computeErdLayout
+  const handleAutoArrange = useCallback(() => {
+    const boardModels = board.nodes
+      .filter((n) => n.kind === 'model')
+      .map((n) => project.models.find((m) => m.id === (n as any).modelId))
+      .filter((m): m is Model => !!m);
+
+    if (boardModels.length === 0) return;
+
+    const layout = computeErdLayout(boardModels);
+
+    store.update((draft) => {
+      const b = draft.boards.find((item) => item.id === boardId);
+      if (!b) return;
+
+      for (const node of b.nodes) {
+        if (node.kind === 'model') {
+          const pos = layout.get(node.modelId);
+          if (pos) {
+            node.position = pos;
+          }
+        }
+      }
+    });
+
+    setTimeout(() => {
+      fitView({ padding: 0.2, duration: 400 });
+    }, 50);
+
+    onShowToast?.('✨ Modelle automatisch und kollisionsfrei angeordnet!');
+  }, [board.nodes, project.models, store, boardId, fitView, onShowToast]);
+
+  // Context menu actions
+  const handleCreateNewModelAt = useCallback(
+    (flowPos: { x: number; y: number }) => {
+      const newModel = createModel(`NeuesModel${project.models.length + 1}`);
+      const newNodeId = uid('n_');
+      store.update((draft) => {
+        draft.models.push(newModel);
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (b) {
+          b.nodes.push({
+            id: newNodeId,
+            kind: 'model',
+            modelId: newModel.id,
+            position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+          });
+        }
+      });
+      setSelectedNodeIds([newNodeId]);
+      onEditModel(newModel.id);
+      onShowToast?.(`✓ Model "${newModel.name}" erstellt!`);
+    },
+    [project.models.length, store, boardId, onEditModel, onShowToast]
+  );
+
+  const handleCreateNoteAt = useCallback(
+    (flowPos: { x: number; y: number }) => {
+      const newNodeId = uid('n_');
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (b) {
+          b.nodes.push({
+            id: newNodeId,
+            kind: 'note',
+            text: 'Neue Notiz für Datenmodelle',
+            position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+          });
+        }
+      });
+      setSelectedNodeIds([newNodeId]);
+      onShowToast?.('📝 Notiz erstellt!');
+    },
+    [store, boardId, onShowToast]
+  );
+
+  const handleDeleteEdge = useCallback(
+    (edgeId: string) => {
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (b) {
+          b.edges = b.edges.filter((e) => e.id !== edgeId);
+        }
+      });
+      if (selectedEdgeId === edgeId) setSelectedEdgeId(null);
+      onShowToast?.('🗑️ Verbindung gelöscht!');
+    },
+    [store, boardId, selectedEdgeId, onShowToast]
+  );
+
+  // Listen to edge delete events from StepWithDeleteEdge
+  useEffect(() => {
+    const onEdgeDeleteEvent = (e: CustomEvent<{ edgeId: string }>) => {
+      handleDeleteEdge(e.detail.edgeId);
+    };
+    window.addEventListener('eventflow:delete-edge' as any, onEdgeDeleteEvent);
+    return () =>
+      window.removeEventListener('eventflow:delete-edge' as any, onEdgeDeleteEvent);
+  }, [handleDeleteEdge]);
+
+  // Align selection
+  const handleAlign = useCallback(
+    (mode: AlignmentMode) => {
+      if (selectedNodeIds.length <= 1) return;
+      const nodesToAlign = board.nodes.filter((n) => selectedNodeIds.includes(n.id));
+      const updates = alignNodes(nodesToAlign, mode);
+      if (updates.length > 0) {
+        store.update((draft) => {
+          const b = draft.boards.find((item) => item.id === boardId);
+          if (!b) return;
+          for (const u of updates) {
+            const n = b.nodes.find((item) => item.id === u.id);
+            if (n) {
+              n.position = u.position;
+            }
+          }
+        });
+        onShowToast?.('✨ Modelle ausgerichtet!');
+      }
+    },
+    [selectedNodeIds, board.nodes, store, boardId, onShowToast]
   );
 
   return (
-    <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden">
-      {/* ERD Control Bar */}
-      <div className="px-6 py-2.5 bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 backdrop-blur-sm z-10 shadow-xs transition-colors">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <Filter className="w-3.5 h-3.5 text-orange-500" />
-            <span>Modell-Fokus:</span>
-          </div>
-
-          <select
-            value={erdFilterModelId}
-            onChange={(e) => onSelectFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500 transition-colors cursor-pointer"
-          >
-            <option value="all">Alle Modelle anzeigen ({allModels.length})</option>
-            {rootModels.length > 0 && (
-              <optgroup label="Hauptmodelle">
-                {rootModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.fields.length} Felder)
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {subModels.length > 0 && (
-              <optgroup label="Untermodelle (Sub-Modelle)">
-                {subModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.fields.length} Felder)
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-
-          {erdFilterModelId !== 'all' && focusedModel && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 flex items-center gap-1.5 border border-orange-200 dark:border-orange-800/60">
-                <span>
-                  Fokus: <strong>{focusedModel.name}</strong> ({nodes.length} Modelle im Diagramm)
-                </span>
-                <button
-                  onClick={() => onSelectFilter('all')}
-                  className="hover:text-orange-950 dark:hover:text-white ml-1 font-bold p-0.5 hover:bg-orange-200 dark:hover:bg-orange-900 rounded"
-                  title="Filter aufheben und alle Modelle anzeigen"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-
-              <button
-                onClick={onToggleIncludeParents}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border transition-colors ${
-                  erdIncludeParents
-                    ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800 font-semibold'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-white'
-                }`}
-                title="Auch übergeordnete Modelle anzeigen, die dieses Modell referenzieren"
-              >
-                <span>Eltern einbeziehen</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => fitView({ padding: 0.25, duration: 300 })}
-            className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Diagramm an Fenstergröße anpassen"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>Zentrieren</span>
-          </button>
-
-          <button
-            onClick={onResetLayout}
-            className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Karten automatisch und kollisionsfrei neu anordnen"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Neu anordnen</span>
-          </button>
-
-          <button
-            onClick={onToggleLegend}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-colors ${
-              showLegend
-                ? 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-700'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white border-transparent'
-            }`}
-            title="ERD-Legende anzeigen oder verbergen"
-          >
-            <Layers className="w-3.5 h-3.5 text-orange-500" />
-            <span>Legende</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ReactFlow Canvas */}
-      <div className="flex-1 w-full h-full relative">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={erdNodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          fitView
-          fitViewOptions={{ padding: 0.25 }}
-          elevateEdgesOnSelect
-          minZoom={0.15}
-          maxZoom={2}
+    <div
+      className="w-full h-full relative"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onPointerMove={(e) => {
+        const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        lastMousePosRef.current = flowPos;
+        manager.updateCursor(flowPos);
+      }}
+      onPointerLeave={() => {
+        manager.updateCursor(null);
+      }}
+    >
+      {/* Floating Canvas Mode Toolbar */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/95 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 rounded-xl p-1 shadow-xl backdrop-blur-md text-xs transition-colors">
+        <button
+          type="button"
+          onClick={() => setIsSelectMode(false)}
+          className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-colors ${
+            !isSelectMode
+              ? 'bg-orange-600 text-white shadow'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+          title="Verschieben: Canvas mit linker Maustaste ziehen"
         >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={16}
-            size={1}
-            color={theme === 'dark' ? '#334155' : '#cbd5e1'}
-          />
-          <Controls className="!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !shadow-md !rounded-lg" />
-          <MiniMap
-            nodeColor={(n) => (n.data?.isRoot ? '#3b82f6' : '#f97316')}
-            className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !rounded-xl"
-          />
-        </ReactFlow>
+          <Hand className="w-3.5 h-3.5" />
+          <span>Verschieben</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsSelectMode(true)}
+          className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-colors ${
+            isSelectMode
+              ? 'bg-orange-600 text-white shadow'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+          title="Rahmen-Auswahl: Rechteck ziehen zum Markieren"
+        >
+          <BoxSelect className="w-3.5 h-3.5" />
+          <span>Auswahl</span>
+        </button>
 
-        {/* Collapsible Floating Legend positioned at bottom-left */}
-        {showLegend && (
-          <div className="absolute bottom-6 left-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-lg text-xs space-y-1.5 pointer-events-none transition-all">
-            <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-orange-500" />
-              <span>ERD-Legende</span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-              <span>Hauptmodell (Root)</span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-              <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-              <span>Untermodell (Sub-Modell)</span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-              <span className="w-4 h-[2px] bg-orange-500" />
-              <span>Feld-Referenz (mit Pfeil)</span>
-            </div>
-          </div>
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+        {/* Snap / Magnet Toggle */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = !isSnapEnabled;
+            setIsSnapEnabled(next);
+            onShowToast?.(
+              next
+                ? '🧲 Raster- & Mitten-Fang aktiviert'
+                : 'Freies Verschieben (Fang deaktiviert)'
+            );
+          }}
+          className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-all ${
+            isSnapEnabled
+              ? 'bg-amber-500/15 dark:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+              : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+          }`}
+          title="Raster- & Mitten-Fang"
+        >
+          <Magnet
+            className={`w-3.5 h-3.5 ${
+              isSnapEnabled ? 'text-amber-500 animate-pulse' : 'text-slate-400'
+            }`}
+          />
+          <span>Snap</span>
+        </button>
+
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+        {/* Quick Add Model on Canvas */}
+        <button
+          type="button"
+          onClick={() => handleCreateNewModelAt(lastMousePosRef.current)}
+          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-1 shadow-sm transition-colors"
+          title="Neues Model direkt auf dem Canvas erstellen"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Model</span>
+        </button>
+
+        {/* Add Note on Canvas */}
+        <button
+          type="button"
+          onClick={() => handleCreateNoteAt(lastMousePosRef.current)}
+          className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+          title="Notiz / Dokumentations-Block hinzufügen"
+        >
+          <FileText className="w-3.5 h-3.5 text-slate-400" />
+          <span>Notiz</span>
+        </button>
+
+        {/* Auto Arrange */}
+        <button
+          type="button"
+          onClick={handleAutoArrange}
+          className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title="Alle Modelle auf dem Canvas automatisch und ordentlich anordnen"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-orange-500" />
+          <span>Anordnen</span>
+        </button>
+
+        {/* Ping / Radar Attention */}
+        <button
+          type="button"
+          onClick={() => triggerPing()}
+          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title="Radar-Ping senden (Taste 'P' oder Alt+Klick auf Canvas)"
+        >
+          <MapPin className="w-3.5 h-3.5 text-amber-500" />
+          <span>Ping</span>
+        </button>
+
+        {/* Java Code Modal */}
+        {onOpenJavaModal && (
+          <button
+            type="button"
+            onClick={() => {
+              const selectedModelNode = board.nodes.find(
+                (n) => selectedNodeIds.includes(n.id) && n.kind === 'model'
+              );
+              onOpenJavaModal(
+                'export',
+                selectedModelNode && selectedModelNode.kind === 'model'
+                  ? selectedModelNode.modelId
+                  : undefined
+              );
+            }}
+            className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Java-Code exportieren / importieren"
+          >
+            <Coffee className="w-3.5 h-3.5 text-amber-500" />
+            <span>Java</span>
+          </button>
+        )}
+
+        {/* Multi-Selection Tools */}
+        {selectedNodeIds.length > 1 && (
+          <>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+            <button
+              type="button"
+              onClick={() => handleAlign('centerH')}
+              className="px-2 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+              title="Horizontal mittig ausrichten"
+            >
+              <AlignHorizontalJustifyCenter className="w-3.5 h-3.5 text-orange-500" />
+              <span className="hidden sm:inline">Mitte H</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAlign('centerV')}
+              className="px-2 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+              title="Vertikal mittig ausrichten"
+            >
+              <AlignVerticalJustifyCenter className="w-3.5 h-3.5 text-orange-500" />
+              <span className="hidden sm:inline">Mitte V</span>
+            </button>
+            <span className="ml-1 px-2 py-0.5 bg-orange-500/20 text-orange-700 dark:text-orange-300 font-semibold text-[11px] rounded-lg border border-orange-500/30">
+              {selectedNodeIds.length} markiert
+            </span>
+          </>
         )}
       </div>
+
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={freeCanvasNodeTypes}
+        edgeTypes={freeCanvasEdgeTypes}
+        onConnect={onConnect}
+        onNodeDragStop={onNodeDragStop}
+        onSelectionDragStop={onSelectionDragStop}
+        selectionMode={SelectionMode.Partial}
+        selectionOnDrag={isSelectMode}
+        panOnDrag={isSelectMode ? [1, 2] : true}
+        paneClickDistance={5}
+        selectionKeyCode={['Shift', 'Control']}
+        multiSelectionKeyCode={['Shift', 'Control']}
+        onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
+          const ids = selNodes.map((n) => n.id);
+          if (
+            ids.length !== selectedNodeIds.length ||
+            !ids.every((id) => selectedNodeIds.includes(id))
+          ) {
+            setSelectedNodeIds(ids);
+            manager.updateSelection(ids);
+          }
+          if (selNodes.length > 0) {
+            setSelectedEdgeId(null);
+          } else if (selEdges.length > 0) {
+            setSelectedEdgeId(selEdges[0].id);
+          } else {
+            setSelectedEdgeId(null);
+          }
+        }}
+        onPaneClick={(e) => {
+          if (e.altKey) {
+            const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            triggerPing(flowPos);
+            return;
+          }
+          setGuideLines({ vertical: null, horizontal: null });
+          setSelectedNodeIds([]);
+          setSelectedEdgeId(null);
+        }}
+        onNodeContextMenu={(event, node) => {
+          event.preventDefault();
+          setSelectedEdgeId(null);
+          let newSelected = selectedNodeIds;
+          if (!selectedNodeIds.includes(node.id)) {
+            newSelected = [node.id];
+            setSelectedNodeIds(newSelected);
+          }
+          const flowPos = screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          const nodeData = board.nodes.find((n) => n.id === node.id);
+          let hasSubModels = false;
+          if (nodeData && nodeData.kind === 'model') {
+            const info = getModelHierarchyInfo(project, nodeData.modelId);
+            hasSubModels = info.subModels.length > 0;
+          }
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            target: {
+              type: 'node',
+              nodeId: node.id,
+              nodeKind: node.type,
+              position: flowPos,
+              selectedCount: newSelected.length,
+              hasSubModels,
+            },
+          });
+        }}
+        onEdgeContextMenu={(event, edge) => {
+          event.preventDefault();
+          setSelectedNodeIds([]);
+          setSelectedEdgeId(edge.id);
+          const flowPos = screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            target: {
+              type: 'edge',
+              edgeId: edge.id,
+              position: flowPos,
+            },
+          });
+        }}
+        onPaneContextMenu={(event) => {
+          event.preventDefault();
+          setSelectedEdgeId(null);
+          const flowPos = screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            target: {
+              type: 'pane',
+              position: flowPos,
+            },
+          });
+        }}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.2}
+        maxZoom={2.5}
+      >
+        <AlignmentGuideLines
+          verticalLine={guideLines.vertical}
+          horizontalLine={guideLines.horizontal}
+        />
+        <MultiplayerCursors />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1.2}
+          color={
+            theme === 'dark' ? 'rgba(148, 163, 184, 0.12)' : 'rgba(100, 116, 139, 0.22)'
+          }
+        />
+        <Controls className="!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !shadow-md !rounded-lg" />
+        <MiniMap
+          nodeColor="#f97316"
+          className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !rounded-xl"
+        />
+      </ReactFlow>
+
+      {/* Context Menu Dropdown */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          target={contextMenu.target}
+          onClose={() => setContextMenu(null)}
+          onCopy={() => {
+            setContextMenu(null);
+          }}
+          onPaste={(flowPos) => {
+            handleCreateNewModelAt(flowPos);
+            setContextMenu(null);
+          }}
+          onDuplicate={(nodeId) => {
+            const idToDupe = nodeId || selectedNodeIds[0];
+            const targetNode = board.nodes.find((n) => n.id === idToDupe);
+            if (targetNode && targetNode.kind === 'model') {
+              const origModel = project.models.find(
+                (m) => m.id === targetNode.modelId
+              );
+              if (origModel) {
+                const newModel = createModel(
+                  `${origModel.name}Kopie`,
+                  JSON.parse(JSON.stringify(origModel.fields))
+                );
+                const newNodeId = uid('n_');
+                store.update((draft) => {
+                  draft.models.push(newModel);
+                  const b = draft.boards.find((item) => item.id === boardId);
+                  if (b) {
+                    b.nodes.push({
+                      id: newNodeId,
+                      kind: 'model',
+                      modelId: newModel.id,
+                      position: {
+                        x: targetNode.position.x + 40,
+                        y: targetNode.position.y + 40,
+                      },
+                    });
+                  }
+                });
+                setSelectedNodeIds([newNodeId]);
+                onShowToast?.(`✨ Model "${newModel.name}" dupliziert!`);
+              }
+            }
+            setContextMenu(null);
+          }}
+          onDelete={(nodeId) => {
+            const idsToDelete = nodeId ? [nodeId] : selectedNodeIds;
+            store.update((draft) => {
+              const b = draft.boards.find((item) => item.id === boardId);
+              if (b) {
+                b.nodes = b.nodes.filter((n) => !idsToDelete.includes(n.id));
+                b.edges = b.edges.filter(
+                  (e) =>
+                    !idsToDelete.includes(e.source) && !idsToDelete.includes(e.target)
+                );
+              }
+            });
+            setSelectedNodeIds([]);
+            onShowToast?.('🗑️ Element vom Canvas entfernt');
+            setContextMenu(null);
+          }}
+          onDeleteEdge={(edgeId) => {
+            handleDeleteEdge(edgeId);
+            setContextMenu(null);
+          }}
+          onEdit={(nodeId) => {
+            const targetNode = board.nodes.find((n) => n.id === nodeId);
+            if (targetNode && targetNode.kind === 'model') {
+              onEditModel(targetNode.modelId);
+            }
+            setContextMenu(null);
+          }}
+          onCreateModel={(pos) => {
+            handleCreateNewModelAt(pos);
+            setContextMenu(null);
+          }}
+          onCreateNote={(pos) => {
+            handleCreateNoteAt(pos);
+            setContextMenu(null);
+          }}
+          onAlign={handleAlign}
+          hasClipboardContent={false}
+        />
+      )}
     </div>
   );
 };
 
+// -----------------------------------------------------------------------------
+// Main DataModelsView Component
+// -----------------------------------------------------------------------------
 export const DataModelsView: React.FC<DataModelsViewProps> = ({
   onEditModel,
   onOpenPlantUmlExport,
@@ -1228,10 +1738,14 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
 }) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
+  const activeBoardId = useStore((s) => s.activeBoardId);
   const { theme } = useTheme();
 
-  // Mode: 'tree' (Hierarchischer Baum) vs 'erd' (Visuelles ERD Canvas)
-  const [viewMode, setViewMode] = useState<'tree' | 'erd'>('tree');
+  // Mode: 'canvas' (Freier interaktiver Canvas) vs 'tree' (Hierarchie-Baum) vs 'erd' (Auto-Diagramm)
+  const [viewMode, setViewMode] = useState<'canvas' | 'tree' | 'erd'>('canvas');
+
+  // Sidebar visibility on free canvas
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Filter: 'all' | 'root' | 'sub'
   const [filterType, setFilterType] = useState<'all' | 'root' | 'sub'>('all');
@@ -1243,14 +1757,9 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   const [showLegend, setShowLegend] = useState(true);
   const [layoutSeed, setLayoutSeed] = useState(0);
 
-  const handleResetLayout = useCallback(() => {
-    setLayoutSeed((s) => s + 1);
-  }, []);
-
-  // Expand / collapse all state in tree view
-  const [expandedModelIds, setExpandedModelIds] = useState<Set<string>>(
-    () => new Set(project.models.map((m) => m.id))
-  );
+  // Model board renaming state
+  const [editingBoardNameId, setEditingBoardNameId] = useState<string | null>(null);
+  const [boardNameDraft, setBoardNameDraft] = useState('');
 
   // Delete confirmation modal state
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
@@ -1277,54 +1786,143 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     return { rootModels: roots, subModels: subs };
   }, [project]);
 
-  // Filtered models for display
+  // Model Boards list
+  const modelBoards = useMemo(() => {
+    return project.boards.filter((b) => b.kind === 'model');
+  }, [project.boards]);
+
+  // Ensure initial model board exists
+  useEffect(() => {
+    if (modelBoards.length === 0) {
+      const newBoard = createModelBoard('Datenmodell 1');
+      if (project.models.length > 0) {
+        const layout = computeErdLayout(project.models);
+        newBoard.nodes = project.models.map((m) => ({
+          id: uid('n_'),
+          kind: 'model',
+          modelId: m.id,
+          position: layout.get(m.id) || { x: 100, y: 100 },
+        }));
+      }
+      store.update((draft) => {
+        draft.boards.push(newBoard);
+      });
+      store.setActiveBoard(newBoard.id);
+    }
+  }, [modelBoards.length, project.models, store]);
+
+  // Active model board
+  const activeModelBoard = useMemo(() => {
+    const curr = project.boards.find(
+      (b) => b.id === activeBoardId && b.kind === 'model'
+    );
+    return curr ?? modelBoards[0] ?? project.boards[0];
+  }, [project.boards, activeBoardId, modelBoards]);
+
+  // Filtered models for sidebar and tree view
   const filteredModels = useMemo(() => {
     return project.models.filter((m) => {
-      // Type filter
       if (filterType === 'root' && !rootModels.some((r) => r.id === m.id)) return false;
       if (filterType === 'sub' && !subModels.some((s) => s.id === m.id)) return false;
 
-      // Search term
       if (!searchTerm) return true;
       const lower = searchTerm.toLowerCase();
       if (m.name.toLowerCase().includes(lower)) return true;
-      if (m.fields.some((f) => f.name.toLowerCase().includes(lower) || f.type.toLowerCase().includes(lower))) {
+      if (
+        m.fields.some(
+          (f) =>
+            f.name.toLowerCase().includes(lower) ||
+            f.type.toLowerCase().includes(lower)
+        )
+      ) {
         return true;
       }
       return false;
     });
   }, [project.models, filterType, rootModels, subModels, searchTerm]);
 
-  // Toggle single expand
-  const handleToggleExpand = useCallback((id: string) => {
-    setExpandedModelIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
+  // Add new Model board
+  const handleAddModelBoard = () => {
+    const newBoard = createModelBoard(`Datenmodell ${modelBoards.length + 1}`);
+    store.update((draft) => {
+      draft.boards.push(newBoard);
     });
-  }, []);
-
-  // Expand / collapse all
-  const handleExpandAll = () => {
-    setExpandedModelIds(new Set(project.models.map((m) => m.id)));
+    store.setActiveBoard(newBoard.id);
+    onShowToast?.(`✨ Neues Modell-Board "${newBoard.name}" angelegt!`);
   };
 
-  const handleCollapseAll = () => {
-    setExpandedModelIds(new Set());
+  const handleStartRenameBoard = (bId: string, currentName: string) => {
+    setEditingBoardNameId(bId);
+    setBoardNameDraft(currentName);
+  };
+
+  const handleSaveRenameBoard = (bId: string) => {
+    const trimmed = boardNameDraft.trim();
+    if (trimmed) {
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === bId);
+        if (b) b.name = trimmed;
+      });
+    }
+    setEditingBoardNameId(null);
+  };
+
+  const handleDeleteModelBoard = (bId: string) => {
+    if (modelBoards.length <= 1) return;
+    store.update((draft) => {
+      deleteBoard(draft, bId);
+    });
+    const remaining = modelBoards.filter((b) => b.id !== bId);
+    if (remaining.length > 0) {
+      store.setActiveBoard(remaining[0].id);
+    }
+    onShowToast?.('🗑️ Modell-Board gelöscht');
   };
 
   // Create new model
   const handleCreateModel = () => {
     const newModel = createModel(`NeuesModel${project.models.length + 1}`);
+    const newNodeId = uid('n_');
     store.update((draft) => {
       draft.models.push(newModel);
+      if (viewMode === 'canvas' && activeModelBoard) {
+        const b = draft.boards.find((item) => item.id === activeModelBoard.id);
+        if (b) {
+          b.nodes.push({
+            id: newNodeId,
+            kind: 'model',
+            modelId: newModel.id,
+            position: { x: 300 + Math.random() * 80, y: 200 + Math.random() * 80 },
+          });
+        }
+      }
     });
-    setExpandedModelIds((prev) => new Set(prev).add(newModel.id));
     onEditModel(newModel.id);
+  };
+
+  // Place model on current board
+  const handlePlaceModelOnCanvas = (modelId: string) => {
+    if (!activeModelBoard) return;
+    const existing = activeModelBoard.nodes.find(
+      (n) => n.kind === 'model' && n.modelId === modelId
+    );
+    if (existing) {
+      onShowToast?.(`Model ist bereits auf dem Board platziert`);
+      return;
+    }
+    const newNodeId = uid('n_');
+    store.update((draft) => {
+      const b = draft.boards.find((item) => item.id === activeModelBoard.id);
+      if (b) {
+        b.nodes.push({
+          id: newNodeId,
+          kind: 'model',
+          modelId,
+          position: { x: 350 + Math.random() * 80, y: 250 + Math.random() * 80 },
+        });
+      }
+    });
+    onShowToast?.(`✓ Model aufs Canvas platziert!`);
   };
 
   // Delete model handler with usage verification
@@ -1359,7 +1957,23 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     setDeleteConfirmation(null);
   };
 
-  // Jump to model card
+  // Expand / collapse all state in tree view
+  const [expandedModelIds, setExpandedModelIds] = useState<Set<string>>(
+    () => new Set(project.models.map((m) => m.id))
+  );
+
+  const handleToggleExpand = useCallback((id: string) => {
+    setExpandedModelIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   const handleFocusModel = (name: string) => {
     const target = project.models.find((m) => m.name === name);
     if (!target) return;
@@ -1375,13 +1989,15 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     }, 50);
   };
 
-  // ---------------------------------------------------------------------------
-  // ERD Mode Canvas Nodes & Edges Generation
-  // ---------------------------------------------------------------------------
+  // ERD Nodes & Edges generation for Auto-Layout mode
   const { erdNodes, erdEdges } = useMemo(() => {
     let visibleModels = project.models;
     if (erdFilterModelId !== 'all') {
-      const subtreeIds = collectSubtreeModelIds(project, erdFilterModelId, erdIncludeParents);
+      const subtreeIds = collectSubtreeModelIds(
+        project,
+        erdFilterModelId,
+        erdIncludeParents
+      );
       visibleModels = project.models.filter((m) => subtreeIds.has(m.id));
     }
 
@@ -1410,7 +2026,6 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
         },
       });
 
-      // Directed edges only between visible models
       for (const field of m.fields) {
         const refs = referencedTypeNames(field.type);
         for (const refName of refs) {
@@ -1428,7 +2043,11 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
               animated: true,
               style: { stroke: '#f97316', strokeWidth: 2 },
               labelStyle: { fill: '#ea580c', fontSize: 11, fontWeight: 600 },
-              labelBgStyle: { fill: theme === 'dark' ? '#0f172a' : '#ffffff', rx: 4, ry: 4 },
+              labelBgStyle: {
+                fill: theme === 'dark' ? '#0f172a' : '#ffffff',
+                rx: 4,
+                ry: 4,
+              },
               labelBgPadding: [6, 3],
               markerEnd: {
                 type: MarkerType.ArrowClosed,
@@ -1453,43 +2072,54 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     layoutSeed,
   ]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(erdNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(erdEdges);
-
-  // Synchronize state when computed erdNodes / erdEdges change
-  useEffect(() => {
-    setNodes(erdNodes);
-  }, [erdNodes, setNodes]);
+  const [erdNodesState, setErdNodesState, onErdNodesChange] = useNodesState(erdNodes);
+  const [erdEdgesState, setErdEdgesState, onErdEdgesChange] = useEdgesState(erdEdges);
 
   useEffect(() => {
-    setEdges(erdEdges);
-  }, [erdEdges, setEdges]);
+    setErdNodesState(erdNodes);
+  }, [erdNodes, setErdNodesState]);
+
+  useEffect(() => {
+    setErdEdgesState(erdEdges);
+  }, [erdEdges, setErdEdgesState]);
 
   return (
     <div className="flex-1 flex flex-col h-full w-full bg-slate-50 dark:bg-[#0b0f19] overflow-hidden select-none">
-      {/* Top Header & Controls */}
-      <header className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 z-10 shadow-sm transition-colors">
+      {/* Top Header & View Controls */}
+      <header className="px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 z-10 shadow-xs transition-colors">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-500/20">
+          <div className="w-9 h-9 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-500/20">
             <Database className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Datenmodelle & Sub-Modelle</span>
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Datenmodelle</span>
+              <span className="px-2 py-0.2 rounded-full text-[11px] font-semibold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300">
                 {project.models.length}
               </span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {rootModels.length} Hauptmodelle, {subModels.length} Untermodelle (Sub-Modelle)
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {rootModels.length} Hauptmodelle, {subModels.length} Untermodelle
             </p>
           </div>
         </div>
 
         {/* View Mode Toggle & Actions */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Mode Switcher: Tree vs ERD Canvas */}
+          {/* Mode Switcher: Freier Canvas vs Hierarchie-Baum vs Auto-Diagramm */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+            <button
+              onClick={() => setViewMode('canvas')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                viewMode === 'canvas'
+                  ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Freier interaktiver Modell-Canvas mit freier Platzierung und Beziehungen"
+            >
+              <Workflow className="w-3.5 h-3.5" />
+              <span>Freier Canvas</span>
+            </button>
             <button
               onClick={() => setViewMode('tree')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
@@ -1497,6 +2127,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
+              title="Hierarchische Baum- und Tabellenansicht mit Attributen"
             >
               <ListTree className="w-3.5 h-3.5" />
               <span>Hierarchie-Baum</span>
@@ -1508,9 +2139,10 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
+              title="Automatisches Modell-Diagramm (ERD)"
             >
               <Network className="w-3.5 h-3.5" />
-              <span>Modell-Diagramm</span>
+              <span>Auto-Layout</span>
             </button>
           </div>
 
@@ -1571,13 +2203,290 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
         </div>
       </header>
 
-      {/* Main Body */}
-      {viewMode === 'tree' ? (
+      {/* Main Workspace Body */}
+      {viewMode === 'canvas' ? (
+        /* ------------------------------------------------------------------- */
+        /* MODE 1: FREIER MODELL-CANVAS                                        */
+        /* ------------------------------------------------------------------- */
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Collapsible Left Model Explorer Sidebar */}
+          <aside
+            className={`${
+              isSidebarOpen ? 'w-72' : 'w-0'
+            } bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-200 overflow-hidden z-10 shrink-0 select-none shadow-sm`}
+          >
+            {isSidebarOpen && (
+              <div className="flex flex-col h-full w-72">
+                {/* Explorer Header */}
+                <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-orange-500" />
+                    <span className="font-bold text-xs text-slate-800 dark:text-slate-100">
+                      Modell-Bibliothek ({project.models.length})
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+                    title="Sidebar zuklappen"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Search & Filter */}
+                <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Modelle durchsuchen..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-8 pr-7 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500"
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <button
+                      onClick={() => setFilterType('all')}
+                      className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                        filterType === 'all'
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      Alle ({project.models.length})
+                    </button>
+                    <button
+                      onClick={() => setFilterType('root')}
+                      className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                        filterType === 'root'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+                      }`}
+                    >
+                      Haupt ({rootModels.length})
+                    </button>
+                    <button
+                      onClick={() => setFilterType('sub')}
+                      className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                        filterType === 'sub'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300'
+                      }`}
+                    >
+                      Sub ({subModels.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Models List */}
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
+                  <div className="text-[10px] text-slate-400 dark:text-slate-500 px-1 py-0.5 flex items-center justify-between">
+                    <span>Per Drag & Drop aufs Canvas ziehen:</span>
+                    <span>{filteredModels.length}</span>
+                  </div>
+
+                  {filteredModels.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400">
+                      Keine Modelle gefunden
+                    </div>
+                  ) : (
+                    filteredModels.map((m) => {
+                      const isRoot = rootModels.some((r) => r.id === m.id);
+                      const isOnBoard = activeModelBoard?.nodes.some(
+                        (n) => n.kind === 'model' && n.modelId === m.id
+                      );
+
+                      return (
+                        <div
+                          key={m.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(
+                              'application/eventflow',
+                              JSON.stringify({
+                                type: 'model',
+                                id: m.id,
+                                name: m.name,
+                              })
+                            );
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                          className={`p-2 rounded-lg border transition-all cursor-grab active:cursor-grabbing group ${
+                            isOnBoard
+                              ? 'bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800/50'
+                              : 'bg-white dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/80 hover:border-orange-400'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                              <GripVertical className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-orange-500 shrink-0" />
+                              <Database
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  isRoot ? 'text-blue-500' : 'text-orange-500'
+                                }`}
+                              />
+                              <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate">
+                                {m.name}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {isOnBoard ? (
+                                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.2 rounded font-medium">
+                                  Auf Canvas
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePlaceModelOnCanvas(m.id)}
+                                  className="text-[10px] text-orange-600 dark:text-orange-400 hover:underline px-1 py-0.5 rounded"
+                                  title="Aufs Canvas platzieren"
+                                >
+                                  + Canvas
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onEditModel(m.id)}
+                                className="p-1 text-slate-400 hover:text-orange-500"
+                                title="Model bearbeiten"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 mt-1 pl-5">
+                            <span>{m.fields.length} Felder</span>
+                            <span>{isRoot ? 'Hauptmodell' : 'Untermodell'}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Bottom Model Boards Switcher */}
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <span>Modell-Boards ({modelBoards.length})</span>
+                    <button
+                      onClick={handleAddModelBoard}
+                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-orange-600 rounded transition-colors"
+                      title="Neues Modell-Board anlegen"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {modelBoards.map((mb) => {
+                      const isActive = mb.id === activeModelBoard?.id;
+                      return (
+                        <div
+                          key={mb.id}
+                          onClick={() => store.setActiveBoard(mb.id)}
+                          className={`px-2 py-1 rounded-md text-xs font-medium flex items-center justify-between cursor-pointer transition-colors ${
+                            isActive
+                              ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-semibold'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          {editingBoardNameId === mb.id ? (
+                            <input
+                              type="text"
+                              value={boardNameDraft}
+                              onChange={(e) => setBoardNameDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveRenameBoard(mb.id);
+                                if (e.key === 'Escape') setEditingBoardNameId(null);
+                              }}
+                              onBlur={() => handleSaveRenameBoard(mb.id)}
+                              autoFocus
+                              className="px-1 py-0.5 bg-white dark:bg-slate-900 border border-orange-400 rounded text-xs w-full"
+                            />
+                          ) : (
+                            <>
+                              <span className="truncate">{mb.name}</span>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartRenameBoard(mb.id, mb.name);
+                                  }}
+                                  className="text-slate-400 hover:text-slate-600"
+                                  title="Umbenennen"
+                                >
+                                  <Edit2 className="w-2.5 h-2.5" />
+                                </button>
+                                {modelBoards.length > 1 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteModelBoard(mb.id);
+                                    }}
+                                    className="text-slate-400 hover:text-rose-500"
+                                    title="Board löschen"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </aside>
+
+          {/* Toggle sidebar button when collapsed */}
+          {!isSidebarOpen && (
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="absolute top-4 left-4 z-20 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-md text-slate-600 dark:text-slate-300 hover:text-orange-600 transition-colors"
+              title="Modell-Explorer öffnen"
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Canvas Area with ReactFlowProvider */}
+          <main className="flex-1 h-full w-full relative bg-slate-100 dark:bg-[#0b0f19]">
+            {activeModelBoard && (
+              <ReactFlowProvider key={activeModelBoard.id}>
+                <FreeModelCanvasInner
+                  boardId={activeModelBoard.id}
+                  onEditModel={onEditModel}
+                  onShowToast={onShowToast}
+                  onOpenJavaModal={onOpenJavaModal}
+                />
+              </ReactFlowProvider>
+            )}
+          </main>
+        </div>
+      ) : viewMode === 'tree' ? (
+        /* ------------------------------------------------------------------- */
+        /* MODE 2: HIERARCHIE-BAUM                                             */
+        /* ------------------------------------------------------------------- */
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Sub-header Filter & Search Bar */}
           <div className="px-6 py-3 bg-white/70 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 backdrop-blur-sm">
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Filter Pills */}
               <button
                 onClick={() => setFilterType('all')}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
@@ -1611,16 +2520,15 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
 
               <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
 
-              {/* Expand / Collapse All */}
               <button
-                onClick={handleExpandAll}
+                onClick={() => setExpandedModelIds(new Set(project.models.map((m) => m.id)))}
                 className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:underline transition-colors"
               >
                 Alle aufklappen
               </button>
               <span className="text-slate-400">•</span>
               <button
-                onClick={handleCollapseAll}
+                onClick={() => setExpandedModelIds(new Set())}
                 className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:underline transition-colors"
               >
                 Alle zuklappen
@@ -1693,26 +2601,147 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
           </div>
         </div>
       ) : (
-        /* Mode: ERD React Flow Canvas */
-        <ReactFlowProvider>
-          <ErdCanvasInner
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            theme={theme}
-            erdFilterModelId={erdFilterModelId}
-            erdIncludeParents={erdIncludeParents}
-            onResetLayout={handleResetLayout}
-            showLegend={showLegend}
-            onToggleLegend={() => setShowLegend((prev) => !prev)}
-            allModels={project.models}
-            rootModels={rootModels}
-            subModels={subModels}
-            onSelectFilter={setErdFilterModelId}
-            onToggleIncludeParents={() => setErdIncludeParents((prev) => !prev)}
-          />
-        </ReactFlowProvider>
+        /* ------------------------------------------------------------------- */
+        /* MODE 3: AUTO-LAYOUT (ERD)                                           */
+        /* ------------------------------------------------------------------- */
+        <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden">
+          {/* ERD Control Bar */}
+          <div className="px-6 py-2.5 bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 backdrop-blur-sm z-10 shadow-xs transition-colors">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <Filter className="w-3.5 h-3.5 text-orange-500" />
+                <span>Modell-Fokus:</span>
+              </div>
+
+              <select
+                value={erdFilterModelId}
+                onChange={(e) => setErdFilterModelId(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500 transition-colors cursor-pointer"
+              >
+                <option value="all">Alle Modelle anzeigen ({project.models.length})</option>
+                {rootModels.length > 0 && (
+                  <optgroup label="Hauptmodelle">
+                    {rootModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.fields.length} Felder)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {subModels.length > 0 && (
+                  <optgroup label="Untermodelle (Sub-Modelle)">
+                    {subModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.fields.length} Felder)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+
+              {erdFilterModelId !== 'all' && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 flex items-center gap-1.5 border border-orange-200 dark:border-orange-800/60">
+                    <span>Fokus aktiv</span>
+                    <button
+                      onClick={() => setErdFilterModelId('all')}
+                      className="hover:text-orange-950 dark:hover:text-white ml-1 font-bold p-0.5 hover:bg-orange-200 dark:hover:bg-orange-900 rounded"
+                      title="Filter aufheben"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+
+                  <button
+                    onClick={() => setErdIncludeParents((prev) => !prev)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border transition-colors ${
+                      erdIncludeParents
+                        ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800 font-semibold'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Auch übergeordnete Modelle anzeigen"
+                  >
+                    <span>Eltern einbeziehen</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setLayoutSeed((s) => s + 1)}
+                className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                title="Karten automatisch neu berechnen"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Neu berechnen</span>
+              </button>
+
+              <button
+                onClick={() => setShowLegend((prev) => !prev)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-colors ${
+                  showLegend
+                    ? 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-700'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white border-transparent'
+                }`}
+                title="Legende umschalten"
+              >
+                <Layers className="w-3.5 h-3.5 text-orange-500" />
+                <span>Legende</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 w-full h-full relative">
+            <ReactFlowProvider>
+              <ReactFlow
+                nodes={erdNodesState}
+                edges={erdEdgesState}
+                nodeTypes={erdNodeTypes}
+                onNodesChange={onErdNodesChange}
+                onEdgesChange={onErdEdgesChange}
+                fitView
+                fitViewOptions={{ padding: 0.25 }}
+                elevateEdgesOnSelect
+                minZoom={0.15}
+                maxZoom={2}
+              >
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={16}
+                  size={1}
+                  color={theme === 'dark' ? '#334155' : '#cbd5e1'}
+                />
+                <Controls className="!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !shadow-md !rounded-lg" />
+                <MiniMap
+                  nodeColor={(n) => (n.data?.isRoot ? '#3b82f6' : '#f97316')}
+                  className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !rounded-xl"
+                />
+              </ReactFlow>
+            </ReactFlowProvider>
+
+            {showLegend && (
+              <div className="absolute bottom-6 left-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-lg text-xs space-y-1.5 pointer-events-none transition-all z-20">
+                <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-orange-500" />
+                  <span>ERD-Legende</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                  <span>Hauptmodell (Root)</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                  <span>Untermodell (Sub-Modell)</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  <span className="w-4 h-[2px] bg-orange-500" />
+                  <span>Feld-Referenz</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Delete Confirmation Modal */}

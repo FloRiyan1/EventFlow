@@ -161,10 +161,13 @@ export const LaneSchema = z.object({
   kind: LaneKindSchema,
 });
 
+export const BoardKindSchema = z.enum(['flow', 'model']).default('flow');
+
 export const BoardSchema = z.object({
   id,
   name: z.string(),
-  lanes: z.array(LaneSchema),
+  kind: BoardKindSchema.optional().default('flow'),
+  lanes: z.array(LaneSchema).default([]),
   nodes: z.array(FlowNodeSchema).default([]),
   edges: z.array(FlowEdgeSchema).default([]),
 });
@@ -201,6 +204,7 @@ export type EdgeKind = z.infer<typeof EdgeKindSchema>;
 export type FlowEdge = z.infer<typeof FlowEdgeSchema>;
 export type LaneKind = z.infer<typeof LaneKindSchema>;
 export type Lane = z.infer<typeof LaneSchema>;
+export type BoardKind = z.infer<typeof BoardKindSchema>;
 export type Board = z.infer<typeof BoardSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type XY = z.infer<typeof XYSchema>;

@@ -189,6 +189,7 @@ export function projectFromDoc(doc: Y.Doc, fallbackProject?: Project): Project {
     boards.push({
       id: boardId,
       name: boardMeta.name || 'Board',
+      kind: boardMeta.kind || 'flow',
       nodes,
       edges,
       lanes: clone(boardMeta.lanes || []),
@@ -199,7 +200,7 @@ export function projectFromDoc(doc: Y.Doc, fallbackProject?: Project): Project {
     if (fallbackProject && fallbackProject.boards.length > 0) {
       boards.push(...fallbackProject.boards);
     } else {
-      boards.push({ id: 'main', name: 'Board 1', nodes: [], edges: [], lanes: [] });
+      boards.push({ id: 'main', name: 'Board 1', kind: 'flow', nodes: [], edges: [], lanes: [] });
     }
   }
 
@@ -296,6 +297,7 @@ export function projectToDoc(doc: Y.Doc, project: Project, origin: string = 'loc
       boardsMap.set(board.id, {
         id: board.id,
         name: board.name,
+        kind: board.kind || 'flow',
         lanes: board.lanes,
         nodeOrder: board.nodes.map((n) => n.id),
         edgeOrder: board.edges.map((e) => e.id),

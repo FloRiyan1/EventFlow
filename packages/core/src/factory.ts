@@ -10,8 +10,19 @@ export function createLanes(): Lane[] {
   ];
 }
 
-export function createBoard(name = 'Neuer Flow'): Board {
-  return { id: uid('b_'), name, lanes: createLanes(), nodes: [], edges: [] };
+export function createBoard(name = 'Neuer Flow', kind: 'flow' | 'model' = 'flow'): Board {
+  return {
+    id: uid('b_'),
+    name,
+    kind,
+    lanes: kind === 'model' ? [] : createLanes(),
+    nodes: [],
+    edges: [],
+  };
+}
+
+export function createModelBoard(name = 'Datenmodell'): Board {
+  return createBoard(name, 'model');
 }
 
 export function createEmptyProject(name = 'Neues Projekt'): Project {

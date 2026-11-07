@@ -1,3 +1,6 @@
+import type { Model } from './schema';
+import { referencedTypeNames } from './fields';
+
 export interface BoundingBox {
   id: string;
   x: number;
@@ -370,4 +373,192 @@ export function alignNodes(
     default:
       return [];
   }
+}
+
+/** Estimate model node height dynamically based on field count */
+export function estimateModelHeight(m: Model): number {
+  const count = Math.min(m.fields.length, 12);
+  return 100 + Math.max(1, count) * 26;
+}
+
+/** Layered, collision-free layout for ERD nodes */
+export function computeErdLayout(models: Model[]): Map<string, { x: number; y: number }> {
+  const modelMap = new Map(models.map((m) => [m.name, m]));
+  const idMap = new Map(models.map((m) => [m.id, m]));
+  const outgoing = new Map<string, string[]>();
+  const incoming = new Map<string, string[]>();
+
+  models.forEach((m) => {
+    outgoing.set(m.id, []);
+    incoming.set(m.id, []);
+  });
+
+  models.forEach((m) => {
+    for (const f of m.fields) {
+      for (const refName of referencedTypeNames(f.type)) {
+        const target = modelMap.get(refName);
+        if (target && !outgoing.get(m.id)!.includes(target.id)) {
+          outgoing.get(m.id)!.push(target.id);
+          incoming.get(target.id)!.push(m.id);
+        }
+      }
+    }
+  });
+
+  // Find weakly connected components
+  const visited = new Set<string>();
+  const components: string[][] = [];
+
+  for (const m of models) {
+    if (visited.has(m.id)) continue;
+    const comp: string[] = [];
+    const queue = [m.id];
+    visited.add(m.id);
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      comp.push(curr);
+      const neighbors = [...outgoing.get(curr)!, ...incoming.get(curr)!];
+      for (const n of neighbors) {
+        if (!visited.has(n)) {
+          visited.add(n);
+          queue.push(n);
+        }
+      }
+    }
+    components.push(comp);
+  }
+
+  const positions = new Map<string, { x: number; y: number }>();
+  const nodeWidth = 280;
+  const nodeGapX = 90;
+  const layerGapY = 130;
+  const compGapX = 140;
+
+  let currentCompStartX = 80;
+  let currentCompStartY = 80;
+  let maxRowHeight = 0;
+
+  for (const compNodeIds of components) {
+    const compModels = compNodeIds.map((id) => idMap.get(id)!);
+    let compRoots = compModels.filter(
+      (m) => incoming.get(m.id)!.filter((id) => compNodeIds.includes(id)).length === 0
+    );
+    if (compRoots.length === 0) compRoots = [compModels[0]];
+
+    const layers = new Map<string, number>();
+    compRoots.forEach((r) => layers.set(r.id, 0));
+
+    let queue = [...compRoots.map((r) => r.id)];
+    const visitedInComp = new Set(queue);
+
+    while (queue.length > 0) {
+      const u = queue.shift()!;
+      const uLayer = layers.get(u) || 0;
+      for (const v of outgoing.get(u)!) {
+        if (!compNodeIds.includes(v)) continue;
+        const currentVLayer = layers.get(v) || 0;
+        if (uLayer + 1 > currentVLayer) {
+          layers.set(v, uLayer + 1);
+        }
+        if (!visitedInComp.has(v)) {
+          visitedInComp.add(v);
+          queue.push(v);
+        }
+      }
+    }
+
+    compModels.forEach((m) => {
+      if (!layers.has(m.id)) layers.set(m.id, 0);
+    });
+
+    const layerGroups = new Map<number, Model[]>();
+    compModels.forEach((m) => {
+      const l = layers.get(m.id)!;
+      if (!layerGroups.has(l)) layerGroups.set(l, []);
+      layerGroups.get(l)!.push(m);
+    });
+
+    const maxLayer = Math.max(...Array.from(layerGroups.keys()));
+
+    const layerY = new Map<number, number>();
+    let compHeight = 0;
+    let currY = currentCompStartY;
+    for (let l = 0; l <= maxLayer; l++) {
+      layerY.set(l, currY);
+      const group = layerGroups.get(l) || [];
+      const maxHeightInLayer = Math.max(
+        ...group.map((m) => estimateModelHeight(m)),
+        140
+      );
+      currY += maxHeightInLayer + layerGapY;
+      compHeight = currY - currentCompStartY;
+    }
+
+    let maxNodesInLayer = 1;
+    for (let l = 0; l <= maxLayer; l++) {
+      const count = (layerGroups.get(l) || []).length;
+      if (count > maxNodesInLayer) maxNodesInLayer = count;
+    }
+
+    const compTotalWidth = maxNodesInLayer * nodeWidth + (maxNodesInLayer - 1) * nodeGapX;
+
+    // Wrap to next component row if canvas gets excessively wide
+    if (currentCompStartX + compTotalWidth > 2600 && currentCompStartX > 80) {
+      currentCompStartX = 80;
+      currentCompStartY += maxRowHeight + 140;
+      maxRowHeight = 0;
+      let recalcY = currentCompStartY;
+      for (let l = 0; l <= maxLayer; l++) {
+        layerY.set(l, recalcY);
+        const group = layerGroups.get(l) || [];
+        const maxHeightInLayer = Math.max(
+          ...group.map((m) => estimateModelHeight(m)),
+          140
+        );
+        recalcY += maxHeightInLayer + layerGapY;
+      }
+    }
+
+    if (compHeight > maxRowHeight) {
+      maxRowHeight = compHeight;
+    }
+
+    for (let l = 0; l <= maxLayer; l++) {
+      const group = layerGroups.get(l) || [];
+      const layerTotalWidth = group.length * nodeWidth + (group.length - 1) * nodeGapX;
+      const layerOffset = (compTotalWidth - layerTotalWidth) / 2;
+
+      group.forEach((m, idx) => {
+        const x = currentCompStartX + layerOffset + idx * (nodeWidth + nodeGapX);
+        const y = layerY.get(l)!;
+        positions.set(m.id, { x: Math.round(x), y: Math.round(y) });
+      });
+    }
+
+    currentCompStartX += compTotalWidth + compGapX;
+  }
+
+  // Safety collision check pass
+  const entries = Array.from(positions.entries());
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const [idA, posA] = entries[i];
+      const [idB, posB] = entries[j];
+      const modelA = idMap.get(idA)!;
+      const modelB = idMap.get(idB)!;
+      const hA = estimateModelHeight(modelA);
+      const hB = estimateModelHeight(modelB);
+
+      const overlapX = Math.abs(posA.x - posB.x) < nodeWidth + 40;
+      const overlapY = Math.abs(posA.y - posB.y) < Math.max(hA, hB) + 40;
+
+      if (overlapX && overlapY) {
+        posB.x = posA.x + nodeWidth + nodeGapX;
+        positions.set(idB, posB);
+      }
+    }
+  }
+
+  return positions;
 }

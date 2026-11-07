@@ -84,8 +84,10 @@ export const Sidebar: React.FC<Props> = ({
     setEditingBoardId(null);
   };
 
+  const flowBoards = project.boards.filter((b) => b.kind !== 'model');
+
   const handleDeleteBoard = (board: { id: string; name: string; nodes: unknown[] }) => {
-    if (project.boards.length <= 1) return;
+    if (flowBoards.length <= 1) return;
 
     // Check if other boards reference this board via flowRef
     const referencingBoards = project.boards
@@ -110,7 +112,7 @@ export const Sidebar: React.FC<Props> = ({
   };
 
   const handleAddBoard = () => {
-    const newBoard = createBoard(`Flow ${project.boards.length + 1}`);
+    const newBoard = createBoard(`Flow ${flowBoards.length + 1}`, 'flow');
     store.update((draft) => {
       draft.boards.push(newBoard);
     });
@@ -302,7 +304,7 @@ export const Sidebar: React.FC<Props> = ({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Flow Boards ({project.boards.length})
+                Flow Boards ({flowBoards.length})
               </span>
               <button
                 onClick={handleAddBoard}
@@ -318,7 +320,7 @@ export const Sidebar: React.FC<Props> = ({
             </div>
 
             <div className="space-y-1.5">
-              {project.boards.map((b) => {
+              {flowBoards.map((b) => {
                 const isActive = b.id === activeBoardId;
                 return (
                   <div
