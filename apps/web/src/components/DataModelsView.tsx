@@ -70,9 +70,7 @@ import {
   Magnet,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
-  FileText,
   GripVertical,
-  Sparkles,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { ModelNode } from '../nodes/ModelNode';
@@ -1380,28 +1378,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
 
         <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
-        {/* Quick Add Model on Canvas */}
-        <button
-          type="button"
-          onClick={() => handleCreateNewModelAt()}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-1 shadow-sm transition-colors"
-          title="Neues Model direkt auf dem Canvas erstellen"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Model</span>
-        </button>
-
-        {/* Add Note on Canvas */}
-        <button
-          type="button"
-          onClick={() => handleCreateNoteAt()}
-          className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
-          title="Notiz / Dokumentations-Block hinzufügen"
-        >
-          <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>Notiz</span>
-        </button>
-
         {/* Auto Arrange */}
         <button
           type="button"
@@ -1412,42 +1388,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           <RotateCcw className="w-3.5 h-3.5 text-orange-500" />
           <span>Anordnen</span>
         </button>
-
-        {/* Java Code Modal */}
-        {onOpenJavaModal && (
-          <button
-            type="button"
-            onClick={() => {
-              const selectedModelNode = board.nodes.find(
-                (n) => selectedNodeIds.includes(n.id) && n.kind === 'model'
-              );
-              onOpenJavaModal(
-                'export',
-                selectedModelNode && selectedModelNode.kind === 'model'
-                  ? selectedModelNode.modelId
-                  : undefined
-              );
-            }}
-            className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Java-Code exportieren / importieren"
-          >
-            <Coffee className="w-3.5 h-3.5 text-amber-500" />
-            <span>Java</span>
-          </button>
-        )}
-
-        {/* Local AI Assistant Integration */}
-        {onOpenAiModal && (
-          <button
-            type="button"
-            onClick={onOpenAiModal}
-            className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Lokale KI (Open WebUI / Ollama) zur Datenmodellierung nutzen"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-            <span>KI</span>
-          </button>
-        )}
 
         {/* Multi-Selection Tools */}
         {selectedNodeIds.length > 1 && (
