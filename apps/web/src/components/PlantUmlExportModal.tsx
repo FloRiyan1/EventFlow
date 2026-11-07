@@ -20,14 +20,7 @@ import {
   ExternalLink,
   FileUp,
   Sparkles,
-  Plus,
-  ArrowRight,
-  Globe,
-  Smartphone,
-  MousePointerClick,
-  FileText,
   AlertCircle,
-  HelpCircle,
 } from 'lucide-react';
 
 interface Props {

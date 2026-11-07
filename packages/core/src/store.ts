@@ -9,6 +9,11 @@ export interface UpdateOptions {
   history?: boolean;
 }
 
+export interface SetProjectOptions {
+  resetHistory?: boolean;
+  preserveActiveBoard?: boolean;
+}
+
 export interface EditorState {
   project: Project;
   activeBoardId: string;
@@ -19,7 +24,7 @@ export interface EditorState {
   /** Revision that was last written to a file. */
   savedRevision: number;
 
-  setProject(project: Project): void;
+  setProject(project: Project, options?: SetProjectOptions): void;
   update(recipe: (draft: Project) => void, options?: UpdateOptions): void;
   undo(): void;
   redo(): void;
@@ -43,9 +48,22 @@ export function createEditorStore(initial: Project) {
     revision: 0,
     savedRevision: 0,
 
-    setProject: (project) => {
+    setProject: (project, options) => {
       const revision = get().revision + 1;
-      set({ project, activeBoardId: project.boards[0].id, past: [], future: [], revision, savedRevision: revision });
+      const preserveActiveBoard = options?.preserveActiveBoard ?? false;
+      const resetHistory = options?.resetHistory ?? true;
+      const activeBoardId = preserveActiveBoard
+        ? validBoard(project, get().activeBoardId)
+        : project.boards[0].id;
+
+      set({
+        project,
+        activeBoardId,
+        past: resetHistory ? [] : get().past,
+        future: resetHistory ? [] : get().future,
+        revision,
+        savedRevision: revision,
+      });
     },
 
     update: (recipe, options) => {
@@ -99,7 +117,7 @@ export function createEditorStore(initial: Project) {
     update: (recipe: (draft: Project) => void, options?: UpdateOptions) => store.getState().update(recipe, options),
     undo: () => store.getState().undo(),
     redo: () => store.getState().redo(),
-    setProject: (p: Project) => store.getState().setProject(p),
+    setProject: (p: Project, opts?: SetProjectOptions) => store.getState().setProject(p, opts),
     setActiveBoard: (id: string) => store.getState().setActiveBoard(id),
     markSaved: () => store.getState().markSaved(),
   });

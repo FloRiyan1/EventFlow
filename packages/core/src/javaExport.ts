@@ -1,4 +1,4 @@
-import type { Field, Model, Project } from './schema';
+import type { Model, Project } from './schema';
 
 export type JavaExportStyle = 'record' | 'pojo' | 'lombok';
 

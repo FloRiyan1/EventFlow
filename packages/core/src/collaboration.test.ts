@@ -32,7 +32,7 @@ describe('Collaboration CRDT & Sync', () => {
       id: 'n_test_1',
       kind: 'userAction',
       position: { x: 150, y: 220 },
-      text: 'Button Clicked',
+      label: 'Button Clicked',
     };
     board.nodes.push(node);
 
@@ -59,13 +59,13 @@ describe('Collaboration CRDT & Sync', () => {
       id: 'node_1',
       kind: 'userAction',
       position: { x: 10, y: 10 },
-      text: 'Action 1',
+      label: 'Action 1',
     };
     const node2: FlowNode = {
       id: 'node_2',
       kind: 'userAction',
       position: { x: 50, y: 50 },
-      text: 'Action 2',
+      label: 'Action 2',
     };
     board.nodes.push(node1, node2);
 

@@ -10,14 +10,12 @@ import {
   Undo,
   Redo,
   Save,
-  Plus,
   Smartphone,
   Globe,
   Database,
   MousePointerClick,
   FileText,
   Workflow,
-  Sparkles,
   Sun,
   Moon,
   Edit2,
@@ -50,7 +48,7 @@ export const TopBar: React.FC<Props> = ({
   onPasteFromClipboard,
 }) => {
   const store = useEditorStore();
-  const { status, setIsModalOpen } = useCollaboration();
+  const { status, setIsModalOpen, jumpToPeer } = useCollaboration();
   const project = useStore((s) => s.project);
   const activeBoardId = useStore((s) => s.activeBoardId);
   const canUndo = useStore((s) => s.past.length > 0);
@@ -474,12 +472,16 @@ export const TopBar: React.FC<Props> = ({
               >
                 {status.self.name.slice(0, 1).toUpperCase()}
               </div>
-              {status.peers.slice(0, 3).map((p) => (
+              {status.peers.slice(0, 4).map((p) => (
                 <div
                   key={p.clientId}
-                  className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-gray-900 flex items-center justify-center text-[9px] font-bold text-white shadow-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    jumpToPeer(p.clientId);
+                  }}
+                  className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-gray-900 flex items-center justify-center text-[9px] font-bold text-white shadow-xs cursor-pointer hover:scale-125 transition-transform"
                   style={{ backgroundColor: p.user.color }}
-                  title={p.user.name}
+                  title={`Zu ${p.user.name} springen`}
                 >
                   {p.user.name.slice(0, 1).toUpperCase()}
                 </div>

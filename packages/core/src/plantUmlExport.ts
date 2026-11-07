@@ -1,4 +1,4 @@
-import type { Board, FlowNode, FlowEdge, Model, Project, ScreenNode, EndpointNode, ModelNode } from './schema';
+import type { Board, Model, Project, ScreenNode, EndpointNode, ModelNode } from './schema';
 import { findTrigger, triggerLabel } from './ops';
 import { referencedTypeNames } from './fields';
 

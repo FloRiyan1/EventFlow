@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore, useEditorStore } from '../storeContext';
 import { uid } from '@eventflow/core';
-import type { Hotspot, Trigger, Rect, ScreenNode } from '@eventflow/core';
-import { X, Plus, Trash2, Tag, Crosshair, Sparkles, Check } from 'lucide-react';
+import type { Hotspot, Rect, ScreenNode } from '@eventflow/core';
+import { X, Plus, Trash2, Crosshair, Check } from 'lucide-react';
 
 interface Props {
   nodeId: string | null;

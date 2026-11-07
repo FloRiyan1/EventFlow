@@ -1,9 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   CollaborationManager,
   type CollaborationStatus,
   type CollaborationUser,
-  type CollaborationPeerState,
   getRandomColor,
 } from '@eventflow/core';
 import { useEditorStore } from './storeContext';
@@ -13,11 +12,17 @@ interface CollaborationContextValue {
   status: CollaborationStatus;
   isModalOpen: boolean;
   setIsModalOpen: (open: boolean) => void;
-  joinRoom: (roomName: string, user?: Partial<CollaborationUser>) => void;
+  joinRoom: (
+    roomName: string,
+    user?: Partial<CollaborationUser>,
+    options?: { password?: string; signalingUrls?: string[] }
+  ) => void;
   leaveRoom: () => void;
   updateUser: (user: Partial<CollaborationUser>) => void;
   getShareUrl: (roomName?: string) => string;
   copyShareLink: () => Promise<boolean>;
+  jumpToPeer: (clientId: number) => void;
+  registerJumpHandler: (fn: (clientId: number) => void) => () => void;
 }
 
 const USER_STORAGE_KEY = 'eventflow_collab_user';
@@ -85,8 +90,27 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     [manager, storedUser]
   );
 
+  const jumpHandlerRef = useRef<((clientId: number) => void) | null>(null);
+
+  const registerJumpHandler = useCallback((fn: (clientId: number) => void) => {
+    jumpHandlerRef.current = fn;
+    return () => {
+      if (jumpHandlerRef.current === fn) {
+        jumpHandlerRef.current = null;
+      }
+    };
+  }, []);
+
+  const jumpToPeer = useCallback((clientId: number) => {
+    jumpHandlerRef.current?.(clientId);
+  }, []);
+
   const joinRoom = useCallback(
-    (roomName: string, user?: Partial<CollaborationUser>) => {
+    (
+      roomName: string,
+      user?: Partial<CollaborationUser>,
+      options?: { password?: string; signalingUrls?: string[] }
+    ) => {
       const currentUser = user ? { ...storedUser, ...user } : storedUser;
       if (user) {
         updateUser(user);
@@ -94,6 +118,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       manager.joinRoom({
         roomName,
         user: currentUser,
+        password: options?.password,
+        signalingUrls: options?.signalingUrls,
       });
 
       // Update URL hash without reload
@@ -154,6 +180,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         updateUser,
         getShareUrl,
         copyShareLink,
+        jumpToPeer,
+        registerJumpHandler,
       }}
     >
       {children}

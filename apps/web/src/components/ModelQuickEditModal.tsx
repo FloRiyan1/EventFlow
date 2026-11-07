@@ -9,7 +9,7 @@ import {
   sortModelFields,
 } from '@eventflow/core';
 import type { Model, FieldSortCriterion } from '@eventflow/core';
-import { X, Check, Database, Sparkles, AlertCircle, ArrowUpDown } from 'lucide-react';
+import { X, Check, Database, Sparkles, ArrowUpDown } from 'lucide-react';
 
 interface Props {
   modelId: string | null;
@@ -39,6 +39,7 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
     const dummyModel: Model = {
       id: model.id,
       name: name || model.name,
+      description: model.description || '',
       fields: [...parsedFields],
     };
     sortModelFields(currentProject, dummyModel, criterion);

@@ -21,11 +21,9 @@ import {
   Plus,
   Edit2,
   Trash2,
-  ChevronRight,
   Search,
   GripVertical,
   AlertTriangle,
-  Workflow,
   ListTree,
   ExternalLink,
   Network,
@@ -68,8 +66,6 @@ export const Sidebar: React.FC<Props> = ({
       nodeCount?: number;
     };
   } | null>(null);
-
-  const activeBoard = project.boards.find((b) => b.id === activeBoardId) ?? project.boards[0];
 
   const handleStartRenameBoard = (boardId: string, currentName: string, e?: React.MouseEvent) => {
     e?.stopPropagation();

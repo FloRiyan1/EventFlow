@@ -27,7 +27,6 @@ import {
   sortModelFields,
   uid,
   type Model,
-  type Field,
   type FieldSortCriterion,
   type Project,
 } from '@eventflow/core';
@@ -1424,7 +1423,6 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
               sourceHandle: 'bottom',
               targetHandle: 'top',
               type: 'smoothstep',
-              pathOptions: { borderRadius: 12 },
               zIndex: 10,
               label: field.name,
               animated: true,

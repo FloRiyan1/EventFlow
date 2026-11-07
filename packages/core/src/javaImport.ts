@@ -474,7 +474,6 @@ export function importJavaIntoProject(
       if (mergeExisting) {
         // Merge or replace fields
         const existing = project.models[existingIndex];
-        const existingFieldNames = new Set(existing.fields.map((f) => f.name));
 
         for (const cf of convertedFields) {
           const idx = existing.fields.findIndex((f) => f.name === cf.name);

@@ -9,12 +9,20 @@ export interface CollaborationUser {
   color: string;
 }
 
+export interface CanvasPing {
+  x: number;
+  y: number;
+  timestamp: number;
+  boardId?: string;
+}
+
 export interface CollaborationPeerState {
   clientId: number;
   user: CollaborationUser;
   cursor: { x: number; y: number } | null;
   selection?: string[];
   activeBoardId?: string;
+  ping?: CanvasPing | null;
 }
 
 export interface CollaborationStatus {
@@ -420,7 +428,7 @@ export class CollaborationManager {
     try {
       this.provider = new WebrtcProvider(this.roomName, this.doc, {
         signaling,
-        password: options.password || null,
+        password: options.password || undefined,
       });
 
       // Setup awareness
@@ -498,6 +506,21 @@ export class CollaborationManager {
     this.provider.awareness.setLocalStateField('activeBoardId', boardId);
   }
 
+  public broadcastPing(x: number, y: number, boardId?: string): void {
+    if (!this.provider?.awareness) return;
+    this.provider.awareness.setLocalStateField('ping', {
+      x,
+      y,
+      timestamp: Date.now(),
+      boardId,
+    });
+    setTimeout(() => {
+      if (this.provider?.awareness) {
+        this.provider.awareness.setLocalStateField('ping', null);
+      }
+    }, 4000);
+  }
+
   public getStatus(): CollaborationStatus {
     const peers: CollaborationPeerState[] = [];
 
@@ -511,6 +534,7 @@ export class CollaborationManager {
             cursor: state.cursor || null,
             selection: state.selection || [],
             activeBoardId: state.activeBoardId,
+            ping: state.ping || null,
           });
         }
       });
@@ -543,7 +567,7 @@ export class CollaborationManager {
     try {
       this.isApplyingRemoteUpdate = true;
       const remoteProject = projectFromDoc(this.doc, this.store.getState().project);
-      this.store.setProject(remoteProject);
+      this.store.setProject(remoteProject, { resetHistory: false, preserveActiveBoard: true });
     } finally {
       this.isApplyingRemoteUpdate = false;
     }

@@ -56,7 +56,6 @@ import { AlignmentGuideLines } from './components/AlignmentGuideLines';
 import {
   Database,
   Globe,
-  Smartphone,
   Sparkles,
   Workflow,
   Hand,
@@ -64,6 +63,7 @@ import {
   Magnet,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  MapPin,
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './themeContext';
 import { CollaborationProvider, useCollaboration } from './collaborationContext';
@@ -107,11 +107,35 @@ const CanvasInner: React.FC<{
   onOpenContextMenu,
 }) => {
   const store = useEditorStore();
-  const { manager } = useCollaboration();
+  const { manager, registerJumpHandler, status } = useCollaboration();
   const project = useStore((s) => s.project);
   const activeBoardId = useStore((s) => s.activeBoardId);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setCenter } = useReactFlow();
   const { theme } = useTheme();
+
+  const lastFlowPosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
+
+  const triggerPing = useCallback(
+    (customPos?: { x: number; y: number }) => {
+      const pos = customPos || lastFlowPosRef.current;
+      manager.broadcastPing(pos.x, pos.y, activeBoardId);
+      onShowToast('📍 Ping auf Zeichenfläche gesendet!');
+    },
+    [manager, activeBoardId, onShowToast]
+  );
+
+  // Keyboard shortcut: Press 'p' or 'P' to send canvas ping
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (document.activeElement?.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        triggerPing();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [triggerPing]);
 
   // Selection mode: Hand (default, pan canvas) vs Box Selection (drag to marquee select)
   const [isSelectMode, setIsSelectMode] = useState(false);
@@ -220,6 +244,38 @@ const CanvasInner: React.FC<{
       return changed ? updated : prevNodes;
     });
   }, [selectedNodeIds, setNodes]);
+
+  // Jump to peer focus listener (from TopBar avatars or CollaborationModal)
+  useEffect(() => {
+    return registerJumpHandler((clientId: number) => {
+      const peer = status.peers.find((p) => p.clientId === clientId);
+      if (!peer) return;
+
+      if (peer.activeBoardId && peer.activeBoardId !== activeBoardId) {
+        store.setActiveBoard(peer.activeBoardId);
+      }
+
+      if (peer.cursor) {
+        setCenter(peer.cursor.x, peer.cursor.y, { zoom: 1, duration: 600 });
+        onShowToast(`🎯 Fokus auf ${peer.user.name || 'Kollege'}`);
+        return;
+      }
+
+      const selection = peer.selection;
+      if (selection && selection.length > 0) {
+        const targetNode = nodes.find((n) => n.id === selection[0]);
+        if (targetNode) {
+          const w = (targetNode.measured?.width ?? 260) / 2;
+          const h = (targetNode.measured?.height ?? 140) / 2;
+          setCenter(targetNode.position.x + w, targetNode.position.y + h, { zoom: 1, duration: 600 });
+          onShowToast(`🎯 Fokus auf Auswahl von ${peer.user.name || 'Kollege'}`);
+          return;
+        }
+      }
+
+      onShowToast(`🎯 ${peer.user.name || 'Kollege'} ist verbunden`);
+    });
+  }, [registerJumpHandler, status.peers, activeBoardId, store, setCenter, onShowToast, nodes]);
 
   // Helper to determine exact orthogonal handles per user rules:
   // 1. API <-> API and API <-> UI: immer links rein und rechts raus
@@ -663,6 +719,7 @@ const CanvasInner: React.FC<{
         onDrop={onDrop}
         onPointerMove={(e) => {
           const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          lastFlowPosRef.current = flowPos;
           manager.updateCursor(flowPos);
         }}
         onPointerLeave={() => {
@@ -714,6 +771,17 @@ const CanvasInner: React.FC<{
           >
             <Magnet className={`w-3.5 h-3.5 ${isSnapEnabled ? 'text-amber-500 animate-pulse' : 'text-slate-400'}`} />
             <span>Snap</span>
+          </button>
+
+          {/* Ping / Radar Attention Signal */}
+          <button
+            type="button"
+            onClick={() => triggerPing()}
+            className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Aufmerksamkeit: Radar-Ping senden (Taste 'P' oder Alt+Klick)"
+          >
+            <MapPin className="w-3.5 h-3.5 text-amber-500" />
+            <span>Ping (P)</span>
           </button>
 
           {/* Multi-Selection Tools */}
@@ -789,7 +857,12 @@ const CanvasInner: React.FC<{
             onSelectNodes([]);
             onSelectEdge(edge.id);
           }}
-          onPaneClick={() => {
+          onPaneClick={(e) => {
+            if (e.altKey) {
+              const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+              triggerPing(flowPos);
+              return;
+            }
             setGuideLines({ vertical: null, horizontal: null });
             onSelectNodes([]);
             onSelectEdge(null);

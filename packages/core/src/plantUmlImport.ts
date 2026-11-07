@@ -1,18 +1,11 @@
 import type {
   Board,
-  ComponentDef,
   Endpoint,
-  Field,
   FlowNode,
   FlowEdge,
   HttpMethod,
   Model,
   ModelNode,
-  EndpointNode,
-  ScreenNode,
-  UserActionNode,
-  NoteNode,
-  FlowRefNode,
   Project,
 } from './schema';
 import { uid } from './ids';
@@ -691,15 +684,13 @@ export function importPlantUmlIntoProject(
             id: nodeId,
             kind: 'screen',
             title: pNode.screenTitle || pNode.label || 'Screen',
+            assetId: '',
             width: 260,
             hotspots: (pNode.hotspots || []).map((h) => ({
               id: uid('h_'),
               label: h.label,
-              x: 20,
-              y: 40,
-              width: 220,
-              height: 40,
-              triggers: [{ id: uid('t_'), event: h.event || 'onTap' }],
+              rect: { x: 0.05, y: 0.1, w: 0.9, h: 0.1 },
+              triggers: [{ id: uid('t_'), event: h.event || 'onTap', condition: '' }],
             })),
             position: { x, y },
           };
@@ -811,7 +802,10 @@ export function importPlantUmlIntoProject(
           id: uid('e_'),
           source: sourceId,
           target: targetId,
-          label: pEdge.label,
+          sourceHandle: null,
+          targetHandle: null,
+          kind: 'flow',
+          label: pEdge.label || '',
         };
         board.edges.push(newEdge);
         stats.createdEdgesCount++;

@@ -7,7 +7,6 @@ import {
   importJavaIntoProject,
   type JavaExportStyle,
   type JavaExportOptions,
-  type Model,
 } from '@eventflow/core';
 import {
   X,
@@ -15,16 +14,10 @@ import {
   Download,
   Upload,
   Check,
-  FileCode,
   Database,
   Coffee,
   Sparkles,
-  ArrowRight,
-  AlertCircle,
   HelpCircle,
-  Layers,
-  Settings,
-  RefreshCw,
 } from 'lucide-react';
 
 interface Props {

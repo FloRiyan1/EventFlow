@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { useEditorStore } from '../storeContext';
 import type { UserActionNode as UserActionNodeType } from '@eventflow/core';

@@ -1,14 +1,10 @@
 import React from 'react';
 import { useStore, useEditorStore } from '../storeContext';
 import {
-  getBoard,
   getNode,
   removeNodes,
   nodeTitle,
-  type FlowNode,
   type ScreenNode,
-  type EndpointNode,
-  type ModelNode,
   type UserActionNode,
   type NoteNode,
 } from '@eventflow/core';
@@ -23,7 +19,6 @@ import {
   Database,
   MousePointerClick,
   FileText,
-  Info,
   Workflow,
 } from 'lucide-react';
 

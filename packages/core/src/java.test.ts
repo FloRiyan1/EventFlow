@@ -9,7 +9,6 @@ import {
   mapTypeToJava,
   normalizeJavaType,
   type Model,
-  type Field,
 } from './index';
 
 describe('Java Code Generation (Export)', () => {

@@ -1,21 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createBoard,
   createEmptyProject,
   createEndpoint,
   createModel,
   fieldsFromText,
-  fieldsToText,
-  formatParam,
   parseFieldLine,
-  parseFieldsText,
   referencedTypeNames,
   renameTypeInExpr,
   createEditorStore,
   connect,
   renameModel,
-  deleteModel,
-  ensureModelsForFields,
   removeNodes,
   removeEdges,
   triggerHandleId,
@@ -33,7 +27,6 @@ import {
   calculateAlignmentSnap,
   snapToGridValue,
   alignNodes,
-  SCHEMA_VERSION,
 } from './index';
 
 describe('Field Parser', () => {
@@ -179,8 +172,8 @@ describe('Domain Operations & Store', () => {
       { id: 'n3', kind: 'model', modelId: 'm1', position: { x: 200, y: 200 } }
     );
     board.edges.push(
-      { id: 'e1', kind: 'trigger', source: 'n1', target: 'n2' },
-      { id: 'e2', kind: 'response', source: 'n2', target: 'n3' }
+      { id: 'e1', kind: 'trigger', source: 'n1', target: 'n2', sourceHandle: null, targetHandle: null, label: '' },
+      { id: 'e2', kind: 'response', source: 'n2', target: 'n3', sourceHandle: null, targetHandle: null, label: '' }
     );
 
     // Remove n1 and n2 simultaneously
@@ -199,8 +192,8 @@ describe('Domain Operations & Store', () => {
       { id: 'n2', kind: 'endpoint', endpointId: 'ep1', position: { x: 100, y: 100 } }
     );
     board.edges.push(
-      { id: 'e1', kind: 'trigger', source: 'n1', target: 'n2', sourceHandle: 'out1', targetHandle: 'in1' },
-      { id: 'e2', kind: 'trigger', source: 'n1', target: 'n2', sourceHandle: 'out2', targetHandle: 'in2' }
+      { id: 'e1', kind: 'trigger', source: 'n1', target: 'n2', sourceHandle: 'out1', targetHandle: 'in1', label: '' },
+      { id: 'e2', kind: 'trigger', source: 'n1', target: 'n2', sourceHandle: 'out2', targetHandle: 'in2', label: '' }
     );
 
     removeEdges(board, new Set(['e1']));
@@ -245,6 +238,7 @@ describe('Domain Operations & Store', () => {
         kind: 'screen',
         title: 'Login Screen',
         assetId: 'a1',
+        width: 240,
         position: { x: 0, y: 0 },
         hotspots: [
           {
@@ -338,7 +332,7 @@ describe('PlantUML Export', () => {
     project.endpoints.push(endpoint);
 
     board.nodes.push(
-      { id: 'n_sc', kind: 'screen', title: 'Main View', assetId: 'a1', position: { x: 0, y: 0 } },
+      { id: 'n_sc', kind: 'screen', title: 'Main View', assetId: 'a1', width: 240, hotspots: [], position: { x: 0, y: 0 } },
       { id: 'n_act', kind: 'userAction', label: 'Click Button', position: { x: 100, y: 0 } },
       { id: 'n_ep', kind: 'endpoint', endpointId: endpoint.id, position: { x: 200, y: 0 } },
       { id: 'n_mo', kind: 'model', modelId: model.id, position: { x: 300, y: 0 } },
