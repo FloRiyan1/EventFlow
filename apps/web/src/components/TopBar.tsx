@@ -23,6 +23,9 @@ import {
   Users,
   Coffee,
   Sparkles,
+  Plus,
+  ListTree,
+  Network,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { useCollaboration } from '../collaborationContext';
@@ -30,6 +33,8 @@ import { useCollaboration } from '../collaborationContext';
 interface Props {
   activeView?: 'flows' | 'models';
   onSelectView?: (view: 'flows' | 'models') => void;
+  modelViewMode?: 'canvas' | 'tree' | 'erd';
+  onSelectModelViewMode?: (mode: 'canvas' | 'tree' | 'erd') => void;
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlModal?: (tab?: 'export' | 'import') => void;
   onOpenJavaModal?: (tab?: 'export' | 'import') => void;
@@ -42,6 +47,8 @@ interface Props {
 export const TopBar: React.FC<Props> = ({
   activeView = 'flows',
   onSelectView,
+  modelViewMode = 'canvas',
+  onSelectModelViewMode,
   onOpenPlantUmlExport,
   onOpenPlantUmlModal,
   onOpenJavaModal,
@@ -141,13 +148,15 @@ export const TopBar: React.FC<Props> = ({
     const nodeId = uid('n_');
     store.update((draft) => {
       draft.models.push(newModel);
-      const b = draft.boards.find((item) => item.id === draft.boards[0].id);
-      if (!b) return;
-      b.nodes.push({
+      const targetBoard = activeView === 'models'
+        ? (draft.boards.find((b) => b.id === activeBoardId && b.kind === 'model') || draft.boards.find((b) => b.kind === 'model') || draft.boards[0])
+        : draft.boards.find((item) => item.id === (activeBoardId || draft.boards[0].id));
+      if (!targetBoard) return;
+      targetBoard.nodes.push({
         id: nodeId,
         kind: 'model',
         modelId: newModel.id,
-        position: { x: 400 + Math.random() * 100, y: 650 + Math.random() * 100 },
+        position: { x: 400 + Math.random() * 100, y: 350 + Math.random() * 100 },
       });
     });
     onEditModel(newModel.id);
@@ -242,50 +251,56 @@ export const TopBar: React.FC<Props> = ({
 
         <span className="text-slate-400 dark:text-slate-600 text-xs">/</span>
 
-        {/* Active Board Name editable */}
-        {isEditingBoardName ? (
-          <input
-            type="text"
-            value={boardNameDraft}
-            onChange={(e) => setBoardNameDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveBoardName();
-              if (e.key === 'Escape') {
-                setBoardNameDraft(activeBoard?.name || 'Board');
-                setIsEditingBoardName(false);
-              }
-            }}
-            onBlur={handleSaveBoardName}
-            autoFocus
-            className="bg-white dark:bg-slate-950 px-2 py-0.5 rounded text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-400 ring-1 ring-amber-400 outline-none transition-colors"
-          />
+        {/* Active Board Name (Flow vs Model view) */}
+        {activeView === 'flows' ? (
+          isEditingBoardName ? (
+            <input
+              type="text"
+              value={boardNameDraft}
+              onChange={(e) => setBoardNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveBoardName();
+                if (e.key === 'Escape') {
+                  setBoardNameDraft(activeBoard?.name || 'Board');
+                  setIsEditingBoardName(false);
+                }
+              }}
+              onBlur={handleSaveBoardName}
+              autoFocus
+              className="bg-white dark:bg-slate-950 px-2 py-0.5 rounded text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-400 ring-1 ring-amber-400 outline-none transition-colors"
+            />
+          ) : (
+            <div className="flex items-center gap-1 group/bname">
+              <span
+                onClick={() => {
+                  setBoardNameDraft(activeBoard?.name || 'Board');
+                  setIsEditingBoardName(true);
+                }}
+                className="text-xs font-semibold text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 px-1.5 py-0.5 rounded transition-colors"
+                title="Klicken zum Umbenennen des aktuellen Flows"
+              >
+                {activeBoard?.name || 'Board'}
+              </span>
+              <button
+                onClick={() => {
+                  setBoardNameDraft(activeBoard?.name || 'Board');
+                  setIsEditingBoardName(!isEditingBoardName);
+                }}
+                title="Aktuellen Flow umbenennen"
+                className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded opacity-0 group-hover/bname:opacity-100 transition-opacity"
+              >
+                <Edit2 className="w-3 h-3" />
+              </button>
+            </div>
+          )
         ) : (
-          <div className="flex items-center gap-1 group/bname">
-            <span
-              onClick={() => {
-                setBoardNameDraft(activeBoard?.name || 'Board');
-                setIsEditingBoardName(true);
-              }}
-              className="text-xs font-semibold text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 px-1.5 py-0.5 rounded transition-colors"
-              title="Klicken zum Umbenennen des aktuellen Flows"
-            >
-              {activeBoard?.name || 'Board'}
-            </span>
-            <button
-              onClick={() => {
-                setBoardNameDraft(activeBoard?.name || 'Board');
-                setIsEditingBoardName(!isEditingBoardName);
-              }}
-              title="Aktuellen Flow umbenennen"
-              className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded opacity-0 group-hover/bname:opacity-100 transition-opacity"
-            >
-              <Edit2 className="w-3 h-3" />
-            </button>
-          </div>
+          <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+            {modelViewMode === 'canvas' ? (activeBoard?.name || 'Datenmodell-Canvas') : modelViewMode === 'tree' ? 'Hierarchie-Baum' : 'Auto-Layout (ERD)'}
+          </span>
         )}
       </div>
 
-      {/* Center: View Switcher & Canvas Add Buttons */}
+      {/* Center: View Switcher & Context-Aware Controls */}
       <div className="flex items-center gap-2.5">
         {/* View Switcher: Flows vs Datenmodelle */}
         <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner">
@@ -308,7 +323,7 @@ export const TopBar: React.FC<Props> = ({
                 ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
-            title="Zur reinen Datenmodell-Ansicht mit allen Untermodellen wechseln"
+            title="Zur Datenmodell-Ansicht wechseln"
           >
             <Database className="w-3.5 h-3.5" />
             <span>Datenmodelle</span>
@@ -318,7 +333,7 @@ export const TopBar: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Middle: Canvas Add Buttons (shown when in flows view) */}
+        {/* In Flows: Canvas Add Buttons */}
         {activeView === 'flows' && (
           <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-950/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
             <button
@@ -365,6 +380,60 @@ export const TopBar: React.FC<Props> = ({
             >
               <FileText className="w-3.5 h-3.5 text-slate-400" />
               <span>+ Notiz</span>
+            </button>
+          </div>
+        )}
+
+        {/* In Models: Sub-View Mode Switcher (Canvas vs Baum vs Auto-Layout) & + Model */}
+        {activeView === 'models' && (
+          <div className="flex items-center gap-2">
+            {onSelectModelViewMode && (
+              <div className="flex items-center bg-slate-100 dark:bg-slate-950/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                <button
+                  onClick={() => onSelectModelViewMode('canvas')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    modelViewMode === 'canvas'
+                      ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Freier interaktiver Modell-Canvas"
+                >
+                  <Workflow className="w-3.5 h-3.5" />
+                  <span>Canvas</span>
+                </button>
+                <button
+                  onClick={() => onSelectModelViewMode('tree')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    modelViewMode === 'tree'
+                      ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Hierarchische Baum- und Tabellenansicht mit Attributen"
+                >
+                  <ListTree className="w-3.5 h-3.5" />
+                  <span>Baum</span>
+                </button>
+                <button
+                  onClick={() => onSelectModelViewMode('erd')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    modelViewMode === 'erd'
+                      ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Automatisches Modell-Diagramm (ERD)"
+                >
+                  <Network className="w-3.5 h-3.5" />
+                  <span>Auto-Layout</span>
+                </button>
+              </div>
+            )}
+            <button
+              onClick={handleAddModel}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-1.5 shadow-sm transition-all"
+              title="Neues Datenmodell anlegen"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Model</span>
             </button>
           </div>
         )}

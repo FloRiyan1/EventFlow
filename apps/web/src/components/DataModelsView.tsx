@@ -51,13 +51,11 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowUpDown,
-  FileCode,
   Layers,
   ArrowRight,
   CornerDownRight,
   AlertTriangle,
   Network,
-  ListTree,
   Check,
   X,
   ExternalLink,
@@ -87,6 +85,8 @@ import { MultiplayerCursors } from './MultiplayerCursors';
 import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
 
 interface DataModelsViewProps {
+  viewMode?: 'canvas' | 'tree' | 'erd';
+  onViewModeChange?: (mode: 'canvas' | 'tree' | 'erd') => void;
   onEditModel: (modelId: string) => void;
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlImport?: () => void;
@@ -1747,9 +1747,11 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
 // Main DataModelsView Component
 // -----------------------------------------------------------------------------
 export const DataModelsView: React.FC<DataModelsViewProps> = ({
+  viewMode: propViewMode,
+  onViewModeChange,
   onEditModel,
-  onOpenPlantUmlExport,
-  onOpenPlantUmlImport,
+  onOpenPlantUmlExport: _onOpenPlantUmlExport,
+  onOpenPlantUmlImport: _onOpenPlantUmlImport,
   onOpenJavaModal,
   onOpenAiModal,
   onShowToast,
@@ -1760,7 +1762,9 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   const { theme } = useTheme();
 
   // Mode: 'canvas' (Freier interaktiver Canvas) vs 'tree' (Hierarchie-Baum) vs 'erd' (Auto-Diagramm)
-  const [viewMode, setViewMode] = useState<'canvas' | 'tree' | 'erd'>('canvas');
+  const [internalViewMode, setInternalViewMode] = useState<'canvas' | 'tree' | 'erd'>('canvas');
+  const viewMode = propViewMode ?? internalViewMode;
+  const setViewMode = onViewModeChange ?? setInternalViewMode;
 
   // Sidebar visibility on free canvas
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -2103,136 +2107,6 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full w-full bg-slate-50 dark:bg-[#0b0f19] overflow-hidden select-none">
-      {/* Top Header & View Controls */}
-      <header className="px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 z-10 shadow-xs transition-colors">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-500/20">
-            <Database className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Datenmodelle</span>
-              <span className="px-2 py-0.2 rounded-full text-[11px] font-semibold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300">
-                {project.models.length}
-              </span>
-            </h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {rootModels.length} Hauptmodelle, {subModels.length} Untermodelle
-            </p>
-          </div>
-        </div>
-
-        {/* View Mode Toggle & Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Mode Switcher: Freier Canvas vs Hierarchie-Baum vs Auto-Diagramm */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-            <button
-              onClick={() => setViewMode('canvas')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                viewMode === 'canvas'
-                  ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Freier interaktiver Modell-Canvas mit freier Platzierung und Beziehungen"
-            >
-              <Workflow className="w-3.5 h-3.5" />
-              <span>Freier Canvas</span>
-            </button>
-            <button
-              onClick={() => setViewMode('tree')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                viewMode === 'tree'
-                  ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Hierarchische Baum- und Tabellenansicht mit Attributen"
-            >
-              <ListTree className="w-3.5 h-3.5" />
-              <span>Hierarchie-Baum</span>
-            </button>
-            <button
-              onClick={() => setViewMode('erd')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                viewMode === 'erd'
-                  ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Automatisches Modell-Diagramm (ERD)"
-            >
-              <Network className="w-3.5 h-3.5" />
-              <span>Auto-Layout</span>
-            </button>
-          </div>
-
-          {/* PlantUML Export & Import */}
-          {(onOpenPlantUmlExport || onOpenPlantUmlImport) && (
-            <div className="flex items-center rounded-lg border border-purple-200 dark:border-purple-800/80 overflow-hidden shadow-sm">
-              {onOpenPlantUmlExport && (
-                <button
-                  onClick={onOpenPlantUmlExport}
-                  className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-colors border-r border-purple-200 dark:border-purple-800/80"
-                  title="Datenmodelle als PlantUML exportieren"
-                >
-                  <FileCode className="w-3.5 h-3.5" />
-                  <span>PlantUML</span>
-                </button>
-              )}
-              {onOpenPlantUmlImport && (
-                <button
-                  onClick={onOpenPlantUmlImport}
-                  className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1 transition-colors"
-                  title="PlantUML Importieren"
-                >
-                  <span>Import</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Java Export & Import */}
-          {onOpenJavaModal && (
-            <div className="flex items-center rounded-lg border border-amber-300 dark:border-amber-800/80 overflow-hidden shadow-sm">
-              <button
-                onClick={() => onOpenJavaModal('export')}
-                className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-colors border-r border-amber-200 dark:border-amber-800/80"
-                title="Java Records & POJOs exportieren"
-              >
-                <Coffee className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                <span>Java</span>
-              </button>
-              <button
-                onClick={() => onOpenJavaModal('import')}
-                className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1 transition-colors"
-                title="Java Code importieren (Records & Klassen)"
-              >
-                <span>Import</span>
-              </button>
-            </div>
-          )}
-
-          {/* Local AI Assistant Integration */}
-          {onOpenAiModal && (
-            <button
-              onClick={onOpenAiModal}
-              className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-300 dark:border-purple-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
-              title="Lokale KI (Open WebUI / Ollama) zur Datenmodellierung aufrufen"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-              <span>KI Modellierung</span>
-            </button>
-          )}
-
-          {/* New Model Button */}
-          <button
-            onClick={handleCreateModel}
-            className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Neues Model</span>
-          </button>
-        </div>
-      </header>
-
       {/* Main Workspace Body */}
       {viewMode === 'canvas' ? (
         /* ------------------------------------------------------------------- */

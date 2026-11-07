@@ -1012,6 +1012,7 @@ const AppContent: React.FC = () => {
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'flows' | 'models'>('flows');
+  const [modelViewMode, setModelViewMode] = useState<'canvas' | 'tree' | 'erd'>('canvas');
   const lastFlowBoardIdRef = useRef<string | null>(null);
   const lastModelBoardIdRef = useRef<string | null>(null);
 
@@ -1657,6 +1658,8 @@ const AppContent: React.FC = () => {
       <TopBar
         activeView={activeView}
         onSelectView={handleSelectView}
+        modelViewMode={modelViewMode}
+        onSelectModelViewMode={setModelViewMode}
         onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
         onOpenPlantUmlModal={handleOpenPlantUml}
         onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
@@ -1721,6 +1724,8 @@ const AppContent: React.FC = () => {
       ) : (
         <div className="flex-1 flex overflow-hidden relative">
           <DataModelsView
+            viewMode={modelViewMode}
+            onViewModeChange={setModelViewMode}
             onEditModel={(id) => setEditingModelId(id)}
             onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
             onOpenPlantUmlImport={() => handleOpenPlantUml('import')}
