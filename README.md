@@ -19,8 +19,9 @@ Anschließend im Browser öffnen: [http://localhost:3000](http://localhost:3000)
 5. **Live-Felder beim Model-Editieren**: Änderungen an Feldern (Doppelklick auf Model oder über die Sidebar) aktualisieren die Ansicht auf dem Canvas sofort.
 6. **Hotspot & Trigger Editor**: Doppelklick auf Screen öffnet den Editor. Rahmen aufziehen, Event festlegen (`onTap`, `onScan`, `onSubmit`...), Bedingung definieren (`unvollstaendig == true`).
 7. **Dart Export**: 1-Klick-Export aller Models als Dart-Klassen mit JSON-Serialisierung.
-8. **Undo / Redo**: `Strg+Z` und `Strg+Y`.
-9. **Speichern / Laden**: Portables `*.eventflow` ZIP-Format.
+8. **Java Modeling & Code-Generierung**: Reines Datenmodellieren mit Java-Import (Interpretation von Java-Records & POJOs) und Java-Export (modernes Java Record, klassisches JavaBean POJO oder Lombok inkl. Jackson `@JsonProperty`).
+9. **Undo / Redo**: `Strg+Z` und `Strg+Y`.
+10. **Speichern / Laden**: Portables `*.eventflow` ZIP-Format.
 
 ## Tests & Build
 

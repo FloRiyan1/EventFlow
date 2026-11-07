@@ -55,6 +55,7 @@ import {
   Filter,
   RotateCcw,
   Maximize2,
+  Coffee,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 
@@ -62,6 +63,7 @@ interface DataModelsViewProps {
   onEditModel: (modelId: string) => void;
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlImport?: () => void;
+  onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
   onShowToast?: (msg: string) => void;
 }
 
@@ -234,6 +236,7 @@ interface TreeModelCardProps {
   onDeleteModel: (model: Model) => void;
   onFocusModel: (name: string) => void;
   onOpenInErd?: (modelId: string) => void;
+  onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
   onShowToast?: (msg: string) => void;
   depth?: number;
 }
@@ -248,6 +251,7 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
   onDeleteModel,
   onFocusModel,
   onOpenInErd,
+  onOpenJavaModal,
   onShowToast,
   depth = 0,
 }) => {
@@ -468,6 +472,17 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
             >
               <Network className="w-3.5 h-3.5 text-orange-500" />
               <span className="hidden md:inline">Diagramm</span>
+            </button>
+          )}
+
+          {onOpenJavaModal && (
+            <button
+              onClick={() => onOpenJavaModal('export', model.id)}
+              className="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 flex items-center gap-1 transition-colors"
+              title={`Java-Code für "${model.name}" generieren`}
+            >
+              <Coffee className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden md:inline">Java</span>
             </button>
           )}
 
@@ -744,6 +759,7 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
                         onDeleteModel={onDeleteModel}
                         onFocusModel={onFocusModel}
                         onOpenInErd={onOpenInErd}
+                        onOpenJavaModal={onOpenJavaModal}
                         onShowToast={onShowToast}
                         depth={depth + 1}
                       />
@@ -1208,6 +1224,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   onEditModel,
   onOpenPlantUmlExport,
   onOpenPlantUmlImport,
+  onOpenJavaModal,
   onShowToast,
 }) => {
   const store = useEditorStore();
@@ -1524,6 +1541,27 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
             </div>
           )}
 
+          {/* Java Export & Import */}
+          {onOpenJavaModal && (
+            <div className="flex items-center rounded-lg border border-amber-300 dark:border-amber-800/80 overflow-hidden shadow-sm">
+              <button
+                onClick={() => onOpenJavaModal('export')}
+                className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-colors border-r border-amber-200 dark:border-amber-800/80"
+                title="Java Records & POJOs exportieren"
+              >
+                <Coffee className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Java</span>
+              </button>
+              <button
+                onClick={() => onOpenJavaModal('import')}
+                className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+                title="Java Code importieren (Records & Klassen)"
+              >
+                <span>Import</span>
+              </button>
+            </div>
+          )}
+
           {/* New Model Button */}
           <button
             onClick={handleCreateModel}
@@ -1649,6 +1687,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                     setErdFilterModelId(id);
                     setViewMode('erd');
                   }}
+                  onOpenJavaModal={onOpenJavaModal}
                   onShowToast={onShowToast}
                 />
               ))

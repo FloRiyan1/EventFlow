@@ -23,6 +23,7 @@ import {
   Edit2,
   FileCode,
   Users,
+  Coffee,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { useCollaboration } from '../collaborationContext';
@@ -32,6 +33,7 @@ interface Props {
   onSelectView?: (view: 'flows' | 'models') => void;
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlModal?: (tab?: 'export' | 'import') => void;
+  onOpenJavaModal?: (tab?: 'export' | 'import') => void;
   onEditModel: (modelId: string) => void;
   onEditEndpoint: (endpointId: string) => void;
   onPasteFromClipboard: () => void;
@@ -42,6 +44,7 @@ export const TopBar: React.FC<Props> = ({
   onSelectView,
   onOpenPlantUmlExport,
   onOpenPlantUmlModal,
+  onOpenJavaModal,
   onEditModel,
   onEditEndpoint,
   onPasteFromClipboard,
@@ -428,6 +431,27 @@ export const TopBar: React.FC<Props> = ({
             <span>Import</span>
           </button>
         </div>
+
+        {/* Java Records & POJOs Export & Import */}
+        {onOpenJavaModal && (
+          <div className="flex items-center rounded-lg border border-amber-300 dark:border-amber-700/60 overflow-hidden shadow-sm">
+            <button
+              onClick={() => onOpenJavaModal('export')}
+              className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-600/20 hover:bg-amber-100 dark:hover:bg-amber-600/30 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-colors border-r border-amber-300 dark:border-amber-700/60"
+              title="Als Java Records oder POJOs exportieren"
+            >
+              <Coffee className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Java</span>
+            </button>
+            <button
+              onClick={() => onOpenJavaModal('import')}
+              className="px-2 py-1.5 bg-amber-50 dark:bg-amber-600/20 hover:bg-amber-100 dark:hover:bg-amber-600/30 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+              title="Java Code importieren (Records & Klassen)"
+            >
+              <span>Import</span>
+            </button>
+          </div>
+        )}
 
         {/* Live Multiplayer Collaboration */}
         {status.roomName ? (

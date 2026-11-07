@@ -29,18 +29,21 @@ import {
   ListTree,
   ExternalLink,
   Network,
+  Coffee,
 } from 'lucide-react';
 
 interface Props {
   onEditModel: (modelId: string) => void;
   onEditEndpoint: (endpointId: string) => void;
   onOpenDataModelsView?: () => void;
+  onOpenJavaModal?: (tab?: 'export' | 'import') => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
   onEditModel,
   onEditEndpoint,
   onOpenDataModelsView,
+  onOpenJavaModal,
 }) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
@@ -454,6 +457,21 @@ export const Sidebar: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5">
                   <ListTree className="w-3.5 h-3.5 text-orange-500" />
                   <span>In Datenmodell-Ansicht öffnen</span>
+                </div>
+                <ExternalLink className="w-3 h-3 opacity-70" />
+              </button>
+            )}
+
+            {onOpenJavaModal && (
+              <button
+                type="button"
+                onClick={() => onOpenJavaModal('export')}
+                className="w-full px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors shadow-sm"
+                title="Java Records & POJOs importieren oder exportieren"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Coffee className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Java Import / Export</span>
                 </div>
                 <ExternalLink className="w-3 h-3 opacity-70" />
               </button>

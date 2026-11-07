@@ -23,6 +23,7 @@ import { HotspotEditorModal } from './components/HotspotEditorModal';
 import { ModelQuickEditModal } from './components/ModelQuickEditModal';
 import { EndpointQuickEditModal } from './components/EndpointQuickEditModal';
 import { PlantUmlExportModal } from './components/PlantUmlExportModal';
+import { JavaModal } from './components/JavaModal';
 import { DataModelsView } from './components/DataModelsView';
 import { ScreenNode } from './nodes/ScreenNode';
 import { EndpointNode } from './nodes/EndpointNode';
@@ -937,11 +938,20 @@ const AppContent: React.FC = () => {
   const [activeView, setActiveView] = useState<'flows' | 'models'>('flows');
   const [plantUmlModalOpen, setPlantUmlModalOpen] = useState(false);
   const [plantUmlModalTab, setPlantUmlModalTab] = useState<'export' | 'import'>('export');
+  const [javaModalOpen, setJavaModalOpen] = useState(false);
+  const [javaModalTab, setJavaModalTab] = useState<'export' | 'import'>('export');
+  const [javaModalModelId, setJavaModalModelId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleOpenPlantUml = useCallback((tab: 'export' | 'import' = 'export') => {
     setPlantUmlModalTab(tab);
     setPlantUmlModalOpen(true);
+  }, []);
+
+  const handleOpenJavaModal = useCallback((tab: 'export' | 'import' = 'export', modelId: string | null = null) => {
+    setJavaModalTab(tab);
+    setJavaModalModelId(modelId);
+    setJavaModalOpen(true);
   }, []);
 
   // Context Menu State
@@ -1523,6 +1533,7 @@ const AppContent: React.FC = () => {
         onSelectView={setActiveView}
         onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
         onOpenPlantUmlModal={handleOpenPlantUml}
+        onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
         onEditModel={(id) => setEditingModelId(id)}
         onEditEndpoint={(id) => setEditingEndpointId(id)}
         onPasteFromClipboard={() => handlePasteFromClipboard()}
@@ -1536,6 +1547,7 @@ const AppContent: React.FC = () => {
             onEditModel={(id) => setEditingModelId(id)}
             onEditEndpoint={(id) => setEditingEndpointId(id)}
             onOpenDataModelsView={() => setActiveView('models')}
+            onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
           />
 
           {/* Center: React Flow Canvas with Provider */}
@@ -1584,6 +1596,7 @@ const AppContent: React.FC = () => {
             onEditModel={(id) => setEditingModelId(id)}
             onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
             onOpenPlantUmlImport={() => handleOpenPlantUml('import')}
+            onOpenJavaModal={handleOpenJavaModal}
             onShowToast={showToast}
           />
         </div>
@@ -1619,6 +1632,17 @@ const AppContent: React.FC = () => {
         onClose={() => setPlantUmlModalOpen(false)}
         onShowToast={showToast}
         onOpenFlowsView={() => setActiveView('flows')}
+      />
+
+      <JavaModal
+        isOpen={javaModalOpen}
+        initialTab={javaModalTab}
+        selectedModelId={javaModalModelId}
+        onClose={() => {
+          setJavaModalOpen(false);
+          setJavaModalModelId(null);
+        }}
+        onShowToast={showToast}
       />
 
       <CollaborationModal />
