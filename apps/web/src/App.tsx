@@ -1675,6 +1675,7 @@ const AppContent: React.FC = () => {
             onEditEndpoint={(id) => setEditingEndpointId(id)}
             onOpenDataModelsView={() => handleSelectView('models')}
             onOpenJavaModal={(tab) => handleOpenJavaModal(tab)}
+            onOpenAiModal={handleOpenAiModal}
           />
 
           {/* Center: React Flow Canvas with Provider */}
@@ -1760,6 +1761,7 @@ const AppContent: React.FC = () => {
         onClose={() => setPlantUmlModalOpen(false)}
         onShowToast={showToast}
         onOpenFlowsView={() => setActiveView('flows')}
+        onOpenAiModal={handleOpenAiModal}
       />
 
       <JavaModal

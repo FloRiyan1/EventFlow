@@ -29,6 +29,7 @@ interface Props {
   onClose: () => void;
   onShowToast?: (msg: string) => void;
   onOpenFlowsView?: () => void;
+  onOpenAiModal?: () => void;
 }
 
 type ExportMode = 'board' | 'models' | 'project';
@@ -74,6 +75,7 @@ export const PlantUmlExportModal: React.FC<Props> = ({
   onClose,
   onShowToast,
   onOpenFlowsView,
+  onOpenAiModal,
 }) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
@@ -386,6 +388,20 @@ export const PlantUmlExportModal: React.FC<Props> = ({
                   <FileUp className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                   <span>Datei hochladen (.puml)</span>
                 </button>
+
+                {onOpenAiModal && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenAiModal();
+                    }}
+                    className="px-3 py-1.5 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-purple-300 dark:border-purple-800 shadow-sm transition-colors"
+                    title="Modelle mit lokaler KI (Open WebUI / Ollama) generieren & importieren"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Mit lokaler KI generieren</span>
+                  </button>
+                )}
 
                 <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
 

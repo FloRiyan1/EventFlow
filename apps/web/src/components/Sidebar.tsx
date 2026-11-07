@@ -28,6 +28,7 @@ import {
   ExternalLink,
   Network,
   Coffee,
+  Sparkles,
 } from 'lucide-react';
 
 interface Props {
@@ -35,6 +36,7 @@ interface Props {
   onEditEndpoint: (endpointId: string) => void;
   onOpenDataModelsView?: () => void;
   onOpenJavaModal?: (tab?: 'export' | 'import') => void;
+  onOpenAiModal?: () => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -42,6 +44,7 @@ export const Sidebar: React.FC<Props> = ({
   onEditEndpoint,
   onOpenDataModelsView,
   onOpenJavaModal,
+  onOpenAiModal,
 }) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
@@ -470,6 +473,21 @@ export const Sidebar: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5">
                   <Coffee className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   <span>Java Import / Export</span>
+                </div>
+                <ExternalLink className="w-3 h-3 opacity-70" />
+              </button>
+            )}
+
+            {onOpenAiModal && (
+              <button
+                type="button"
+                onClick={onOpenAiModal}
+                className="w-full px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors shadow-sm"
+                title="Lokale KI (Open WebUI / Ollama) zur Datenmodellierung nutzen"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                  <span>KI-Modellierung</span>
                 </div>
                 <ExternalLink className="w-3 h-3 opacity-70" />
               </button>
