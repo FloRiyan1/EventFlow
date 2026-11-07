@@ -70,6 +70,7 @@ import {
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
   GripVertical,
+  Upload,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { ModelNode } from '../nodes/ModelNode';
@@ -77,6 +78,7 @@ import { NoteNode } from '../nodes/NoteNode';
 import { StepWithDeleteEdge } from '../edges/StepWithDeleteEdge';
 import { AlignmentGuideLines } from './AlignmentGuideLines';
 import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
+import { ImportModelsModal } from './ImportModelsModal';
 
 interface DataModelsViewProps {
   viewMode?: 'canvas' | 'tree' | 'erd';
@@ -875,6 +877,7 @@ interface FreeModelCanvasInnerProps {
   onOpenPlantUmlImport?: () => void;
   onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
   onOpenAiModal?: () => void;
+  onOpenImportModelsModal?: () => void;
 }
 
 const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
@@ -885,6 +888,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   onOpenPlantUmlImport,
   onOpenJavaModal,
   onOpenAiModal,
+  onOpenImportModelsModal,
 }) => {
   const store = useEditorStore();
   const project = useStore((s) => s.project);
@@ -1631,6 +1635,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           onOpenPlantUmlImport={onOpenPlantUmlImport}
           onOpenJavaModal={onOpenJavaModal}
           onOpenAiModal={onOpenAiModal}
+          onImportModelsToPage={onOpenImportModelsModal}
         />
       )}
     </div>
@@ -1662,6 +1667,10 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
 
   // Sidebar visibility on free canvas
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Scope for canvas sidebar: 'page' (only models on this page) | 'other' (models not on this page) | 'all' (all project models)
+  const [sidebarScope, setSidebarScope] = useState<'page' | 'other' | 'all'>('page');
+  const [isImportModelsModalOpen, setIsImportModelsModalOpen] = useState(false);
 
   // Filter: 'all' | 'root' | 'sub'
   const [filterType, setFilterType] = useState<'all' | 'root' | 'sub'>('all');
@@ -1736,9 +1745,34 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     return curr ?? modelBoards[0] ?? project.boards[0];
   }, [project.boards, activeBoardId, modelBoards]);
 
+  // Models placed on active model board
+  const pageModelIds = useMemo(() => {
+    if (!activeModelBoard) return new Set<string>();
+    return new Set(
+      activeModelBoard.nodes
+        .filter((n) => n.kind === 'model' && 'modelId' in n)
+        .map((n) => (n as { modelId: string }).modelId)
+    );
+  }, [activeModelBoard]);
+
+  const pageModels = useMemo(() => {
+    return project.models.filter((m) => pageModelIds.has(m.id));
+  }, [project.models, pageModelIds]);
+
+  const otherModels = useMemo(() => {
+    return project.models.filter((m) => !pageModelIds.has(m.id));
+  }, [project.models, pageModelIds]);
+
+  const scopeModels = useMemo(() => {
+    if (viewMode !== 'canvas') return project.models;
+    if (sidebarScope === 'page') return pageModels;
+    if (sidebarScope === 'other') return otherModels;
+    return project.models;
+  }, [viewMode, sidebarScope, pageModels, otherModels, project.models]);
+
   // Filtered models for sidebar and tree view
   const filteredModels = useMemo(() => {
-    return project.models.filter((m) => {
+    return scopeModels.filter((m) => {
       if (filterType === 'root' && !rootModels.some((r) => r.id === m.id)) return false;
       if (filterType === 'sub' && !subModels.some((s) => s.id === m.id)) return false;
 
@@ -1756,7 +1790,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
       }
       return false;
     });
-  }, [project.models, filterType, rootModels, subModels, searchTerm]);
+  }, [scopeModels, filterType, rootModels, subModels, searchTerm]);
 
   // Add new Model board
   const handleAddModelBoard = () => {
@@ -1796,6 +1830,51 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     onShowToast?.('🗑️ Modell-Board gelöscht');
   };
 
+  // Import models to current page with smart placement
+  const handleImportModelsToPage = useCallback(
+    (modelIds: string[]) => {
+      if (!activeModelBoard || modelIds.length === 0) return;
+      const existingModelIds = new Set(
+        activeModelBoard.nodes
+          .filter((n) => n.kind === 'model' && 'modelId' in n)
+          .map((n) => (n as { modelId: string }).modelId)
+      );
+      const toAdd = modelIds.filter((id) => !existingModelIds.has(id));
+      if (toAdd.length === 0) {
+        onShowToast?.('Alle ausgewählten Modelle sind bereits auf dieser Page');
+        return;
+      }
+
+      const currentCount = activeModelBoard.nodes.length;
+      const newNodes = toAdd.map((mId, index) => {
+        const slot = currentCount + index;
+        const col = slot % 3;
+        const row = Math.floor(slot / 3);
+        return {
+          id: uid('n_'),
+          kind: 'model' as const,
+          modelId: mId,
+          position: {
+            x: 220 + col * 290 + (Math.random() * 20 - 10),
+            y: 120 + row * 250 + (Math.random() * 20 - 10),
+          },
+        };
+      });
+
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === activeModelBoard.id);
+        if (b) {
+          b.nodes.push(...newNodes);
+        }
+      });
+
+      onShowToast?.(
+        `✓ ${toAdd.length} ${toAdd.length === 1 ? 'Modell' : 'Modelle'} auf "${activeModelBoard.name}" importiert!`
+      );
+    },
+    [activeModelBoard, store, onShowToast]
+  );
+
   // Create new model
   const handleCreateModel = () => {
     const newModel = createModel(`NeuesModel${project.models.length + 1}`);
@@ -1819,27 +1898,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
 
   // Place model on current board
   const handlePlaceModelOnCanvas = (modelId: string) => {
-    if (!activeModelBoard) return;
-    const existing = activeModelBoard.nodes.find(
-      (n) => n.kind === 'model' && n.modelId === modelId
-    );
-    if (existing) {
-      onShowToast?.(`Model ist bereits auf dem Board platziert`);
-      return;
-    }
-    const newNodeId = uid('n_');
-    store.update((draft) => {
-      const b = draft.boards.find((item) => item.id === activeModelBoard.id);
-      if (b) {
-        b.nodes.push({
-          id: newNodeId,
-          kind: 'model',
-          modelId,
-          position: { x: 350 + Math.random() * 80, y: 250 + Math.random() * 80 },
-        });
-      }
-    });
-    onShowToast?.(`✓ Model aufs Canvas platziert!`);
+    handleImportModelsToPage([modelId]);
   };
 
   // Delete model handler with usage verification
@@ -2021,7 +2080,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   <div className="flex items-center gap-2">
                     <Database className="w-4 h-4 text-orange-500" />
                     <span className="font-bold text-xs text-slate-800 dark:text-slate-100">
-                      Modell-Bibliothek ({project.models.length})
+                      Modell-Bibliothek
                     </span>
                   </div>
                   <button
@@ -2033,13 +2092,61 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   </button>
                 </div>
 
+                {/* Scope Switcher: Diese Page vs Andere Modelle vs Alle */}
+                <div className="p-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40">
+                  <div className="grid grid-cols-3 gap-1 bg-slate-200/70 dark:bg-slate-800/80 p-0.5 rounded-lg text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setSidebarScope('page')}
+                      className={`py-1 px-1 rounded-md font-semibold text-center transition-all truncate ${
+                        sidebarScope === 'page'
+                          ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                      title="Hauptsächlich die Modelle dieser aktuellen Page anzeigen"
+                    >
+                      Page ({pageModels.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSidebarScope('other')}
+                      className={`py-1 px-1 rounded-md font-semibold text-center transition-all truncate ${
+                        sidebarScope === 'other'
+                          ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                      title="Andere Modelle anzeigen, die noch nicht auf dieser Page sind"
+                    >
+                      Andere ({otherModels.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSidebarScope('all')}
+                      className={`py-1 px-1 rounded-md font-semibold text-center transition-all truncate ${
+                        sidebarScope === 'all'
+                          ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                      title="Alle Modelle im Projekt"
+                    >
+                      Alle ({project.models.length})
+                    </button>
+                  </div>
+                </div>
+
                 {/* Search & Filter */}
-                <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="p-2.5 border-b border-slate-200 dark:border-slate-800 space-y-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                     <input
                       type="text"
-                      placeholder="Modelle durchsuchen..."
+                      placeholder={
+                        sidebarScope === 'page'
+                          ? 'Page-Modelle durchsuchen...'
+                          : sidebarScope === 'other'
+                          ? 'Andere Modelle suchen...'
+                          : 'Alle Modelle durchsuchen...'
+                      }
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full pl-8 pr-7 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500"
@@ -2063,7 +2170,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                       }`}
                     >
-                      Alle ({project.models.length})
+                      Alle ({scopeModels.length})
                     </button>
                     <button
                       onClick={() => setFilterType('root')}
@@ -2073,7 +2180,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                           : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
                       }`}
                     >
-                      Haupt ({rootModels.length})
+                      Haupt
                     </button>
                     <button
                       onClick={() => setFilterType('sub')}
@@ -2083,28 +2190,74 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                           : 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300'
                       }`}
                     >
-                      Sub ({subModels.length})
+                      Sub
                     </button>
                   </div>
                 </div>
 
+                {/* Import quick button at top of models list when in 'other' scope */}
+                {sidebarScope === 'other' && otherModels.length > 0 && (
+                  <div className="p-2 border-b border-slate-200 dark:border-slate-800 bg-orange-50/40 dark:bg-orange-950/20 flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-orange-900 dark:text-orange-200">
+                      {otherModels.length} nicht auf dieser Page
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleImportModelsToPage(otherModels.map((m) => m.id))}
+                      className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Alle auf Page</span>
+                    </button>
+                  </div>
+                )}
+
                 {/* Models List */}
                 <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
                   <div className="text-[10px] text-slate-400 dark:text-slate-500 px-1 py-0.5 flex items-center justify-between">
-                    <span>Per Drag & Drop aufs Canvas ziehen:</span>
+                    <span>
+                      {sidebarScope === 'page'
+                        ? 'Modelle dieser Page:'
+                        : sidebarScope === 'other'
+                        ? 'Klicken zum Hinzufügen:'
+                        : 'Alle Modelle:'}
+                    </span>
                     <span>{filteredModels.length}</span>
                   </div>
 
                   {filteredModels.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-slate-400">
-                      Keine Modelle gefunden
+                    <div className="text-center py-8 px-4 text-xs text-slate-400 dark:text-slate-500 space-y-3">
+                      {sidebarScope === 'page' ? (
+                        <>
+                          <p>Noch keine Modelle auf dieser Page platziert.</p>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setIsImportModelsModalOpen(true)}
+                              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
+                            >
+                              <Upload className="w-3.5 h-3.5 rotate-180" />
+                              <span>Modelle importieren</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCreateModel}
+                              className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium text-xs transition-colors"
+                            >
+                              + Neues Model erstellen
+                            </button>
+                          </div>
+                        </>
+                      ) : sidebarScope === 'other' ? (
+                        <p>Alle Modelle des Projekts sind bereits auf dieser Page platziert! 🎉</p>
+                      ) : (
+                        <p>Keine Modelle gefunden</p>
+                      )}
                     </div>
                   ) : (
                     filteredModels.map((m) => {
                       const isRoot = rootModels.some((r) => r.id === m.id);
-                      const isOnBoard = activeModelBoard?.nodes.some(
-                        (n) => n.kind === 'model' && n.modelId === m.id
-                      );
+                      const isOnBoard = pageModelIds.has(m.id);
 
                       return (
                         <div
@@ -2143,16 +2296,16 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                             <div className="flex items-center gap-1 shrink-0">
                               {isOnBoard ? (
                                 <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.2 rounded font-medium">
-                                  Auf Canvas
+                                  Auf Page
                                 </span>
                               ) : (
                                 <button
                                   type="button"
                                   onClick={() => handlePlaceModelOnCanvas(m.id)}
-                                  className="text-[10px] text-orange-600 dark:text-orange-400 hover:underline px-1 py-0.5 rounded"
-                                  title="Aufs Canvas platzieren"
+                                  className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 px-1.5 py-0.5 rounded border border-orange-300 dark:border-orange-800 transition-colors"
+                                  title="Auf diese Page importieren"
                                 >
-                                  + Canvas
+                                  + Page
                                 </button>
                               )}
                               <button
@@ -2176,78 +2329,25 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   )}
                 </div>
 
-                {/* Bottom Model Boards Switcher */}
-                <div className="p-2.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    <span>Modell-Boards ({modelBoards.length})</span>
-                    <button
-                      onClick={handleAddModelBoard}
-                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-orange-600 rounded transition-colors"
-                      title="Neues Modell-Board anlegen"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-1 max-h-28 overflow-y-auto">
-                    {modelBoards.map((mb) => {
-                      const isActive = mb.id === activeModelBoard?.id;
-                      return (
-                        <div
-                          key={mb.id}
-                          onClick={() => store.setActiveBoard(mb.id)}
-                          className={`px-2 py-1 rounded-md text-xs font-medium flex items-center justify-between cursor-pointer transition-colors ${
-                            isActive
-                              ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-semibold'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          {editingBoardNameId === mb.id ? (
-                            <input
-                              type="text"
-                              value={boardNameDraft}
-                              onChange={(e) => setBoardNameDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveRenameBoard(mb.id);
-                                if (e.key === 'Escape') setEditingBoardNameId(null);
-                              }}
-                              onBlur={() => handleSaveRenameBoard(mb.id)}
-                              autoFocus
-                              className="px-1 py-0.5 bg-white dark:bg-slate-900 border border-orange-400 rounded text-xs w-full"
-                            />
-                          ) : (
-                            <>
-                              <span className="truncate">{mb.name}</span>
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStartRenameBoard(mb.id, mb.name);
-                                  }}
-                                  className="text-slate-400 hover:text-slate-600"
-                                  title="Umbenennen"
-                                >
-                                  <Edit2 className="w-2.5 h-2.5" />
-                                </button>
-                                {modelBoards.length > 1 && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteModelBoard(mb.id);
-                                    }}
-                                    className="text-slate-400 hover:text-rose-500"
-                                    title="Board löschen"
-                                  >
-                                    <Trash2 className="w-2.5 h-2.5" />
-                                  </button>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                {/* Bottom Action Bar */}
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModelsModalOpen(true)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-orange-700 dark:text-orange-300 bg-orange-100/70 dark:bg-orange-950/50 hover:bg-orange-200/70 dark:hover:bg-orange-900/60 transition-colors"
+                    title="Modelle aus dem Projekt auswählen und auf diese Page importieren"
+                  >
+                    <Upload className="w-3.5 h-3.5 rotate-180" />
+                    <span>Importieren...</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateModel}
+                    className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                    title="Neues Model anlegen"
+                  >
+                    <Plus className="w-4 h-4 text-orange-600" />
+                  </button>
                 </div>
               </div>
             )}
@@ -2257,28 +2357,149 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
           {!isSidebarOpen && (
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="absolute top-4 left-4 z-20 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-md text-slate-600 dark:text-slate-300 hover:text-orange-600 transition-colors"
+              className="absolute top-16 left-4 z-20 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-md text-slate-600 dark:text-slate-300 hover:text-orange-600 transition-colors"
               title="Modell-Explorer öffnen"
             >
               <PanelLeft className="w-4 h-4" />
             </button>
           )}
 
-          {/* Canvas Area with ReactFlowProvider */}
-          <main className="flex-1 h-full w-full relative bg-slate-100 dark:bg-[#0b0f19]">
-            {activeModelBoard && (
-              <ReactFlowProvider key={activeModelBoard.id}>
-                <FreeModelCanvasInner
-                  boardId={activeModelBoard.id}
-                  onEditModel={onEditModel}
-                  onShowToast={onShowToast}
-                  onOpenPlantUmlExport={onOpenPlantUmlExport}
-                  onOpenPlantUmlImport={onOpenPlantUmlImport}
-                  onOpenJavaModal={onOpenJavaModal}
-                  onOpenAiModal={onOpenAiModal}
-                />
-              </ReactFlowProvider>
-            )}
+          {/* Canvas Area with Modelpage Tabs Bar and ReactFlowProvider */}
+          <main className="flex-1 h-full w-full relative flex flex-col bg-slate-100 dark:bg-[#0b0f19] overflow-hidden">
+            {/* Top Modelpages Tabs Bar */}
+            <div className="h-11 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between gap-2 shrink-0 z-10 shadow-xs">
+              <div className="flex items-center gap-1.5 overflow-x-auto flex-1 py-1 no-scrollbar">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1 shrink-0">
+                  Pages:
+                </span>
+                {modelBoards.map((mb) => {
+                  const isActive = mb.id === activeModelBoard?.id;
+                  const boardModelCount = mb.nodes.filter((n) => n.kind === 'model').length;
+                  return (
+                    <div
+                      key={mb.id}
+                      onClick={() => store.setActiveBoard(mb.id)}
+                      onDoubleClick={() => handleStartRenameBoard(mb.id, mb.name)}
+                      className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border transition-all shrink-0 ${
+                        isActive
+                          ? 'bg-orange-500 text-white border-orange-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-700/80'
+                      }`}
+                    >
+                      {editingBoardNameId === mb.id ? (
+                        <input
+                          type="text"
+                          value={boardNameDraft}
+                          onChange={(e) => setBoardNameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveRenameBoard(mb.id);
+                            if (e.key === 'Escape') setEditingBoardNameId(null);
+                          }}
+                          onBlur={() => handleSaveRenameBoard(mb.id)}
+                          autoFocus
+                          className="px-1.5 py-0.5 bg-white text-slate-900 rounded text-xs w-28 outline-none border border-orange-400"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <>
+                          <span className="truncate max-w-[140px]">{mb.name}</span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                              isActive
+                                ? 'bg-orange-600 text-white'
+                                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                            }`}
+                            title={`${boardModelCount} Modelle auf dieser Page`}
+                          >
+                            {boardModelCount}
+                          </span>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartRenameBoard(mb.id, mb.name);
+                              }}
+                              className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                                isActive
+                                  ? 'hover:bg-orange-600 text-orange-200 hover:text-white'
+                                  : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600'
+                              }`}
+                              title="Page umbenennen"
+                            >
+                              <Edit2 className="w-2.5 h-2.5" />
+                            </button>
+                            {modelBoards.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteModelBoard(mb.id);
+                                }}
+                                className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                                  isActive
+                                    ? 'hover:bg-orange-600 text-orange-200 hover:text-white'
+                                    : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-rose-500'
+                                }`}
+                                title="Page löschen"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={handleAddModelBoard}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 border border-dashed border-orange-300 dark:border-orange-800 transition-colors shrink-0"
+                  title="Neue Modelpage erstellen"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Neue Page</span>
+                </button>
+              </div>
+
+              {/* Import Models to Page Button in top bar */}
+              <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModelsModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 dark:hover:bg-orange-900/60 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800 transition-all shadow-xs"
+                  title="Modelle aus dem Projekt auf diese Page importieren"
+                >
+                  <Upload className="w-3.5 h-3.5 rotate-180" />
+                  <span>Modelle importieren</span>
+                  {otherModels.length > 0 && (
+                    <span className="text-[10px] bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200 px-1.5 py-0.2 rounded-full font-bold">
+                      {otherModels.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Canvas ReactFlow Container */}
+            <div className="flex-1 w-full h-full relative">
+              {activeModelBoard && (
+                <ReactFlowProvider key={activeModelBoard.id}>
+                  <FreeModelCanvasInner
+                    boardId={activeModelBoard.id}
+                    onEditModel={onEditModel}
+                    onShowToast={onShowToast}
+                    onOpenPlantUmlExport={onOpenPlantUmlExport}
+                    onOpenPlantUmlImport={onOpenPlantUmlImport}
+                    onOpenJavaModal={onOpenJavaModal}
+                    onOpenAiModal={onOpenAiModal}
+                    onOpenImportModelsModal={() => setIsImportModelsModalOpen(true)}
+                  />
+                </ReactFlowProvider>
+              )}
+            </div>
           </main>
         </div>
       ) : viewMode === 'tree' ? (
@@ -2631,6 +2852,20 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Import Models to Page Modal */}
+      {activeModelBoard && (
+        <ImportModelsModal
+          isOpen={isImportModelsModalOpen}
+          onClose={() => setIsImportModelsModalOpen(false)}
+          boardName={activeModelBoard.name}
+          projectModels={project.models}
+          existingModelIds={pageModelIds}
+          onImportModels={(modelIds) => {
+            handleImportModelsToPage(modelIds);
+          }}
+        />
       )}
     </div>
   );

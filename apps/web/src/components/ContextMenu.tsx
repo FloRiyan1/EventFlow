@@ -56,6 +56,7 @@ interface Props {
   onOpenPlantUmlImport?: () => void;
   onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
   onOpenAiModal?: () => void;
+  onImportModelsToPage?: () => void;
 }
 
 export const ContextMenu: React.FC<Props> = ({
@@ -80,6 +81,7 @@ export const ContextMenu: React.FC<Props> = ({
   onOpenPlantUmlImport,
   onOpenJavaModal,
   onOpenAiModal,
+  onImportModelsToPage,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
@@ -261,6 +263,24 @@ export const ContextMenu: React.FC<Props> = ({
                   <Database className="w-3.5 h-3.5" />
                 </div>
                 <span>Neues Modell (Model)</span>
+              </div>
+              <Plus className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          )}
+
+          {onImportModelsToPage && (
+            <button
+              onClick={() => {
+                onImportModelsToPage();
+                onClose();
+              }}
+              className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-orange-50 dark:hover:bg-orange-950/40 text-slate-700 dark:text-slate-200 hover:text-orange-700 dark:hover:text-orange-300 transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-5 h-5 rounded bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+                  <Upload className="w-3.5 h-3.5" />
+                </div>
+                <span>Modelle auf Page importieren...</span>
               </div>
               <Plus className="w-3.5 h-3.5 text-slate-400" />
             </button>

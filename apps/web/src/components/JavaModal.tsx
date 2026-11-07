@@ -5,6 +5,7 @@ import {
   exportAllModelsToJava,
   parseJavaCode,
   importJavaIntoProject,
+  uid,
   type JavaExportStyle,
   type JavaExportOptions,
 } from '@eventflow/core';
@@ -98,8 +99,26 @@ export const JavaModal: React.FC<Props> = ({
     }
   }, [isOpen, initialTab]);
 
+  const activeBoardId = useStore((s) => s.activeBoardId);
+  const activeBoard = useMemo(() => {
+    return project.boards.find((b) => b.id === activeBoardId);
+  }, [project.boards, activeBoardId]);
+
+  const isModelBoard = activeBoard?.kind === 'model';
+  const pageModels = useMemo(() => {
+    if (!activeBoard || activeBoard.kind !== 'model') return [];
+    const ids = new Set(
+      activeBoard.nodes
+        .filter((n) => n.kind === 'model' && 'modelId' in n)
+        .map((n) => (n as { modelId: string }).modelId)
+    );
+    return project.models.filter((m) => ids.has(m.id));
+  }, [activeBoard, project.models]);
+
   // Export States
-  const [exportTarget, setExportTarget] = useState<string>(selectedModelId || 'all');
+  const [exportTarget, setExportTarget] = useState<string>(
+    selectedModelId || (isModelBoard && pageModels.length > 0 ? 'page' : 'all')
+  );
   const [exportStyle, setExportStyle] = useState<JavaExportStyle>('record');
   const [packageName, setPackageName] = useState('com.example.models');
   const [useJackson, setUseJackson] = useState(true);
@@ -109,8 +128,12 @@ export const JavaModal: React.FC<Props> = ({
   useEffect(() => {
     if (selectedModelId) {
       setExportTarget(selectedModelId);
+    } else if (isModelBoard && pageModels.length > 0) {
+      setExportTarget('page');
+    } else {
+      setExportTarget('all');
     }
-  }, [selectedModelId]);
+  }, [selectedModelId, isModelBoard, pageModels.length]);
 
   // Import States
   const [importCode, setImportCode] = useState(SAMPLE_RECORD_JAVA);
@@ -128,7 +151,9 @@ export const JavaModal: React.FC<Props> = ({
         useJackson,
       };
 
-      if (exportTarget === 'all') {
+      if (exportTarget === 'page') {
+        return exportAllModelsToJava(pageModels, options);
+      } else if (exportTarget === 'all') {
         return exportAllModelsToJava(project, options);
       } else {
         const model = (project.models || []).find((m) => m.id === exportTarget);
@@ -139,7 +164,7 @@ export const JavaModal: React.FC<Props> = ({
       console.error('Error generating Java code:', err);
       return `// Fehler beim Generieren des Java-Codes: ${err instanceof Error ? err.message : String(err)}`;
     }
-  }, [isOpen, project, exportTarget, exportStyle, packageName, useJackson]);
+  }, [isOpen, project, pageModels, exportTarget, exportStyle, packageName, useJackson]);
 
   // Compute Import Live Preview (Hook called unconditionally)
   const previewParse = useMemo(() => {
@@ -194,10 +219,33 @@ export const JavaModal: React.FC<Props> = ({
     if (!importCode.trim()) return;
 
     store.update((draft) => {
+      const beforeModelIds = new Set(draft.models.map((m) => m.id));
       const res = importJavaIntoProject(draft, importCode, {
         mergeExisting,
         createReferencedModels,
       });
+
+      // If currently on a Model Board, place newly imported models onto this board!
+      const currentBoard = draft.boards.find((b) => b.id === store.getState().activeBoardId);
+      if (currentBoard && currentBoard.kind === 'model') {
+        const newlyImported = draft.models.filter(
+          (m) =>
+            !beforeModelIds.has(m.id) ||
+            !currentBoard.nodes.some((n) => n.kind === 'model' && n.modelId === m.id)
+        );
+        newlyImported.forEach((m, idx) => {
+          if (!currentBoard.nodes.some((n) => n.kind === 'model' && n.modelId === m.id)) {
+            const col = (currentBoard.nodes.length + idx) % 4;
+            const row = Math.floor((currentBoard.nodes.length + idx) / 4);
+            currentBoard.nodes.push({
+              id: uid('n_'),
+              kind: 'model',
+              modelId: m.id,
+              position: { x: 250 + col * 280, y: 150 + row * 240 },
+            });
+          }
+        });
+      }
 
       const total = res.createdCount + res.updatedCount;
       const refMsg = res.referencedCreatedCount > 0 ? ` (+${res.referencedCreatedCount} Untermodelle)` : '';
@@ -283,10 +331,15 @@ export const JavaModal: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Modell:</span>
                   <select
-                    value={(project.models || []).some((m) => m.id === exportTarget) ? exportTarget : 'all'}
+                    value={exportTarget}
                     onChange={(e) => setExportTarget(e.target.value)}
                     className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
+                    {isModelBoard && pageModels.length > 0 && (
+                      <option value="page">
+                        Aktuelle Page: {activeBoard?.name || 'Modelpage'} ({pageModels.length} Modelle)
+                      </option>
+                    )}
                     <option value="all">Alle Modelle ({(project.models || []).length})</option>
                     <optgroup label="Einzelne Modelle">
                       {(project.models || []).map((m) => (
