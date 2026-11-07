@@ -13,6 +13,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   SelectionMode,
+  PanOnScrollMode,
   useNodesState,
   useEdgesState,
 } from '@xyflow/react';
@@ -749,9 +750,17 @@ const CanvasInner: React.FC<{
           selectionMode={SelectionMode.Partial}
           selectionOnDrag={isSelectMode}
           panOnDrag={isSelectMode ? [1, 2] : true}
+          panOnScroll={true}
+          panOnScrollMode={PanOnScrollMode.Free}
+          panOnScrollSpeed={1}
+          zoomOnScroll={false}
+          zoomOnPinch={true}
+          zoomActivationKeyCode={['Meta', 'Control']}
+          preventScrolling={true}
           paneClickDistance={5}
-          selectionKeyCode={['Shift', 'Control']}
-          multiSelectionKeyCode={['Shift', 'Control']}
+          selectionKeyCode={['Shift', 'Meta', 'Control']}
+          multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
+          deleteKeyCode={['Backspace', 'Delete']}
           onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
             const ids = selNodes.map((n) => n.id);
             if (ids.length !== selectedNodeIds.length || !ids.every((id) => selectedNodeIds.includes(id))) {

@@ -14,6 +14,7 @@ import {
   useNodesState,
   useEdgesState,
   SelectionMode,
+  PanOnScrollMode,
   OnConnect,
   Connection,
 } from '@xyflow/react';
@@ -1434,9 +1435,17 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         selectionMode={SelectionMode.Partial}
         selectionOnDrag={isSelectMode}
         panOnDrag={isSelectMode ? [1, 2] : true}
+        panOnScroll={true}
+        panOnScrollMode={PanOnScrollMode.Free}
+        panOnScrollSpeed={1}
+        zoomOnScroll={false}
+        zoomOnPinch={true}
+        zoomActivationKeyCode={['Meta', 'Control']}
+        preventScrolling={true}
         paneClickDistance={5}
-        selectionKeyCode={['Shift', 'Control']}
-        multiSelectionKeyCode={['Shift', 'Control']}
+        selectionKeyCode={['Shift', 'Meta', 'Control']}
+        multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
+        deleteKeyCode={['Backspace', 'Delete']}
         onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
           const ids = selNodes.map((n) => n.id);
           if (
@@ -2727,6 +2736,16 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                   event.preventDefault();
                   setErdContextMenu({ x: event.clientX, y: event.clientY });
                 }}
+                panOnScroll={true}
+                panOnScrollMode={PanOnScrollMode.Free}
+                panOnScrollSpeed={1}
+                zoomOnScroll={false}
+                zoomOnPinch={true}
+                zoomActivationKeyCode={['Meta', 'Control']}
+                preventScrolling={true}
+                selectionKeyCode={['Shift', 'Meta', 'Control']}
+                multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
+                deleteKeyCode={['Backspace', 'Delete']}
                 fitView
                 fitViewOptions={{ padding: 0.25 }}
                 elevateEdgesOnSelect

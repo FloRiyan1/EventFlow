@@ -5,6 +5,11 @@
 @tailwind utilities;
 
 /* Custom canvas & swimlane styling */
+.react-flow {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
 .react-flow__background {
   background-color: #f8fafc;
 }
