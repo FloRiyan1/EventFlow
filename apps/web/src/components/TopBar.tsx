@@ -20,7 +20,6 @@ import {
   Moon,
   Edit2,
   FileCode,
-  Users,
   Coffee,
   Sparkles,
   Plus,
@@ -28,7 +27,6 @@ import {
   Network,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
-import { useCollaboration } from '../collaborationContext';
 
 interface Props {
   activeView?: 'flows' | 'models';
@@ -58,7 +56,6 @@ export const TopBar: React.FC<Props> = ({
   onPasteFromClipboard,
 }) => {
   const store = useEditorStore();
-  const { status, setIsModalOpen, jumpToPeer } = useCollaboration();
   const project = useStore((s) => s.project);
   const activeBoardId = useStore((s) => s.activeBoardId);
   const canUndo = useStore((s) => s.past.length > 0);
@@ -532,54 +529,6 @@ export const TopBar: React.FC<Props> = ({
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-500" />
             <span>KI-Assistent</span>
-          </button>
-        )}
-
-        {/* Live Multiplayer Collaboration */}
-        {status.roomName ? (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 rounded-lg text-xs font-semibold shadow-sm hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-            title={`Verbunden mit Raum: ${status.roomName}. Klicken für Details & Share-Link.`}
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-            <span>Live ({status.peers.length + 1})</span>
-            {/* Peer Avatars */}
-            <div className="flex -space-x-1.5 ml-0.5">
-              <div
-                className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-gray-900 flex items-center justify-center text-[9px] font-bold text-white shadow-xs"
-                style={{ backgroundColor: status.self.color }}
-                title={`${status.self.name} (Du)`}
-              >
-                {status.self.name.slice(0, 1).toUpperCase()}
-              </div>
-              {status.peers.slice(0, 4).map((p) => (
-                <div
-                  key={p.clientId}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    jumpToPeer(p.clientId);
-                  }}
-                  className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-gray-900 flex items-center justify-center text-[9px] font-bold text-white shadow-xs cursor-pointer hover:scale-125 transition-transform"
-                  style={{ backgroundColor: p.user.color }}
-                  title={`Zu ${p.user.name} springen`}
-                >
-                  {p.user.name.slice(0, 1).toUpperCase()}
-                </div>
-              ))}
-            </div>
-          </button>
-        ) : (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-semibold transition-colors shadow-sm"
-            title="Echtzeit-Kollaboration starten (Multiplayer per Raum-Link)"
-          >
-            <Users className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>Live teilen</span>
           </button>
         )}
 

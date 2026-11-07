@@ -9,7 +9,6 @@ export * from './dartExport';
 export * from './plantUmlExport';
 export * from './plantUmlImport';
 export * from './alignmentUtils';
-export * from './collaboration';
 export * from './javaExport';
 export * from './javaImport';
 export * from './aiClient';

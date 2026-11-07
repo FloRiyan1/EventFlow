@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -70,18 +70,15 @@ import {
   Magnet,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
-  MapPin,
   FileText,
   GripVertical,
   Sparkles,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
-import { useCollaboration } from '../collaborationContext';
 import { ModelNode } from '../nodes/ModelNode';
 import { NoteNode } from '../nodes/NoteNode';
 import { StepWithDeleteEdge } from '../edges/StepWithDeleteEdge';
 import { AlignmentGuideLines } from './AlignmentGuideLines';
-import { MultiplayerCursors } from './MultiplayerCursors';
 import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
 
 interface DataModelsViewProps {
@@ -895,7 +892,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   const store = useEditorStore();
   const project = useStore((s) => s.project);
   const { theme } = useTheme();
-  const { manager } = useCollaboration();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   const board = useMemo(() => {
@@ -917,30 +913,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
     y: number;
     target: ContextMenuTarget;
   } | null>(null);
-
-  const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 300, y: 300 });
-
-  const triggerPing = useCallback(
-    (flowPos?: { x: number; y: number }) => {
-      const pos = flowPos || lastMousePosRef.current;
-      manager.broadcastPing(pos.x, pos.y, boardId);
-      onShowToast?.('📍 Ping auf Modell-Canvas gesendet!');
-    },
-    [manager, boardId, onShowToast]
-  );
-
-  // Key shortcut for canvas ping ('P')
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const tag = (document.activeElement?.tagName || '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea') return;
-        triggerPing();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [triggerPing]);
 
   // Transform domain nodes into ReactFlow nodes
   const rfNodes = useMemo<Node[]>(() => {
@@ -1251,7 +1223,8 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
 
   // Context menu actions
   const handleCreateNewModelAt = useCallback(
-    (flowPos: { x: number; y: number }) => {
+    (flowPos?: { x: number; y: number }) => {
+      const pos = flowPos ?? { x: 300 + Math.random() * 80, y: 300 + Math.random() * 80 };
       const newModel = createModel(`NeuesModel${project.models.length + 1}`);
       const newNodeId = uid('n_');
       store.update((draft) => {
@@ -1262,7 +1235,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
             id: newNodeId,
             kind: 'model',
             modelId: newModel.id,
-            position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+            position: { x: Math.round(pos.x), y: Math.round(pos.y) },
           });
         }
       });
@@ -1274,7 +1247,8 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   );
 
   const handleCreateNoteAt = useCallback(
-    (flowPos: { x: number; y: number }) => {
+    (flowPos?: { x: number; y: number }) => {
+      const pos = flowPos ?? { x: 300 + Math.random() * 80, y: 300 + Math.random() * 80 };
       const newNodeId = uid('n_');
       store.update((draft) => {
         const b = draft.boards.find((item) => item.id === boardId);
@@ -1283,7 +1257,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
             id: newNodeId,
             kind: 'note',
             text: 'Neue Notiz für Datenmodelle',
-            position: { x: Math.round(flowPos.x), y: Math.round(flowPos.y) },
+            position: { x: Math.round(pos.x), y: Math.round(pos.y) },
           });
         }
       });
@@ -1345,14 +1319,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
       className="w-full h-full relative"
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onPointerMove={(e) => {
-        const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-        lastMousePosRef.current = flowPos;
-        manager.updateCursor(flowPos);
-      }}
-      onPointerLeave={() => {
-        manager.updateCursor(null);
-      }}
     >
       {/* Floating Canvas Mode Toolbar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/95 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 rounded-xl p-1 shadow-xl backdrop-blur-md text-xs transition-colors">
@@ -1417,7 +1383,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         {/* Quick Add Model on Canvas */}
         <button
           type="button"
-          onClick={() => handleCreateNewModelAt(lastMousePosRef.current)}
+          onClick={() => handleCreateNewModelAt()}
           className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-1 shadow-sm transition-colors"
           title="Neues Model direkt auf dem Canvas erstellen"
         >
@@ -1428,7 +1394,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         {/* Add Note on Canvas */}
         <button
           type="button"
-          onClick={() => handleCreateNoteAt(lastMousePosRef.current)}
+          onClick={() => handleCreateNoteAt()}
           className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
           title="Notiz / Dokumentations-Block hinzufügen"
         >
@@ -1445,17 +1411,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         >
           <RotateCcw className="w-3.5 h-3.5 text-orange-500" />
           <span>Anordnen</span>
-        </button>
-
-        {/* Ping / Radar Attention */}
-        <button
-          type="button"
-          onClick={() => triggerPing()}
-          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          title="Radar-Ping senden (Taste 'P' oder Alt+Klick auf Canvas)"
-        >
-          <MapPin className="w-3.5 h-3.5 text-amber-500" />
-          <span>Ping</span>
         </button>
 
         {/* Java Code Modal */}
@@ -1546,7 +1501,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
             !ids.every((id) => selectedNodeIds.includes(id))
           ) {
             setSelectedNodeIds(ids);
-            manager.updateSelection(ids);
           }
           if (selNodes.length > 0) {
             setSelectedEdgeId(null);
@@ -1556,12 +1510,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
             setSelectedEdgeId(null);
           }
         }}
-        onPaneClick={(e) => {
-          if (e.altKey) {
-            const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            triggerPing(flowPos);
-            return;
-          }
+        onPaneClick={() => {
           setGuideLines({ vertical: null, horizontal: null });
           setSelectedNodeIds([]);
           setSelectedEdgeId(null);
@@ -1643,7 +1592,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           verticalLine={guideLines.vertical}
           horizontalLine={guideLines.horizontal}
         />
-        <MultiplayerCursors />
         <Background
           variant={BackgroundVariant.Dots}
           gap={20}
