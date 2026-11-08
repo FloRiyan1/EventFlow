@@ -62,8 +62,8 @@ import {
   Globe,
   Sparkles,
   Workflow,
+  MousePointer2,
   Hand,
-  BoxSelect,
   Magnet,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
@@ -114,8 +114,45 @@ const CanvasInner: React.FC<{
   const { screenToFlowPosition } = useReactFlow();
   const { theme } = useTheme();
 
-  // Selection mode: Hand (default, pan canvas) vs Box Selection (drag to marquee select)
-  const [isSelectMode, setIsSelectMode] = useState(false);
+  // Canvas mode: 'edit' (select, drag, edit elements) vs 'move' (pan canvas anywhere with left-click)
+  const [canvasMode, setCanvasMode] = useState<'edit' | 'move'>(() => {
+    const saved = localStorage.getItem('eventflow_canvas_mode');
+    return saved === 'move' || saved === 'edit' ? saved : 'edit';
+  });
+
+  const handleSetCanvasMode = useCallback(
+    (mode: 'edit' | 'move') => {
+      setCanvasMode(mode);
+      localStorage.setItem('eventflow_canvas_mode', mode);
+      onShowToast(
+        mode === 'edit'
+          ? '✏️ Bearbeiten-Modus: Elemente auswählen, verschieben & bearbeiten'
+          : '✋ Bewegen-Modus: Arbeitsfläche mit linker Maustaste verschieben'
+      );
+    },
+    [onShowToast]
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'v' || e.key === 'V') {
+        handleSetCanvasMode('edit');
+      } else if (e.key === 'h' || e.key === 'H') {
+        handleSetCanvasMode('move');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSetCanvasMode]);
 
   // Snap to grid & smart center alignment state
   const [isSnapEnabled, setIsSnapEnabled] = useState(true);
@@ -686,25 +723,29 @@ const CanvasInner: React.FC<{
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/95 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 rounded-xl p-1 shadow-xl backdrop-blur-md text-xs transition-colors">
           <button
             type="button"
-            onClick={() => setIsSelectMode(false)}
+            onClick={() => handleSetCanvasMode('edit')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-colors ${
-              !isSelectMode ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              canvasMode === 'edit'
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
-            title="Verschieben-Modus: Canvas mit linker Maustaste ziehen (oder Shift gedrückt halten für Rahmen-Auswahl)"
+            title="Bearbeiten (V): Elemente auswählen, verschieben, verbinden & editieren"
           >
-            <Hand className="w-3.5 h-3.5" />
-            <span>Verschieben</span>
+            <MousePointer2 className="w-3.5 h-3.5" />
+            <span>Bearbeiten</span>
           </button>
           <button
             type="button"
-            onClick={() => setIsSelectMode(true)}
+            onClick={() => handleSetCanvasMode('move')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-colors ${
-              isSelectMode ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              canvasMode === 'move'
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
-            title="Rahmen-Auswahl: Mit linker Maustaste Rechteck ziehen, um mehrere Elemente zu markieren"
+            title="Bewegen (H): Arbeitsfläche mit linker Maustaste frei schwenken & navigieren"
           >
-            <BoxSelect className="w-3.5 h-3.5" />
-            <span>Rahmen-Auswahl</span>
+            <Hand className="w-3.5 h-3.5" />
+            <span>Bewegen</span>
           </button>
 
           {/* Divider */}
@@ -798,9 +839,13 @@ const CanvasInner: React.FC<{
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onSelectionDragStop={onSelectionDragStop}
+          nodesDraggable={canvasMode === 'edit'}
+          nodesConnectable={canvasMode === 'edit'}
+          elementsSelectable={canvasMode === 'edit'}
           selectionMode={SelectionMode.Partial}
-          selectionOnDrag={isSelectMode}
-          panOnDrag={isSelectMode ? [1, 2] : true}
+          selectionOnDrag={canvasMode === 'edit'}
+          panOnDrag={canvasMode === 'move' ? true : [1, 2]}
+          className={canvasMode === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}
           panOnScroll={navMode === 'trackpad'}
           panOnScrollMode={PanOnScrollMode.Free}
           panOnScrollSpeed={1}
