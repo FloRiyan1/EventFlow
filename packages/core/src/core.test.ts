@@ -32,6 +32,9 @@ import {
   getDescendantModels,
   exportModelToDart,
   exportAllModelsToDart,
+  parseModelDeclaration,
+  formatModelDeclaration,
+  applyModelDeclaration,
 } from './index';
 
 describe('Field Parser', () => {
@@ -811,6 +814,10 @@ n2 --> n3 : returns
       const childCode = exportModelToDart(child, project);
       expect(childCode).toContain('class ChildModel extends BaseModel {');
       expect(childCode).toContain('ChildModel.fromJson');
+
+      const allDart = exportAllModelsToDart(project);
+      expect(allDart).toContain('abstract class BaseModel');
+      expect(allDart).toContain('class ChildModel extends BaseModel');
     });
 
     it('exports inheritance to PlantUML correctly', () => {
@@ -824,6 +831,82 @@ n2 --> n3 : returns
       expect(puml).toContain('class "UserEntity"');
       expect(puml).toContain('<|--');
       expect(puml).toContain(': extends');
+    });
+
+    it('parses declaration syntax directly from model names (e.g. A extends B, abstract C)', () => {
+      expect(parseModelDeclaration('Customer')).toEqual({
+        name: 'Customer',
+        isAbstract: undefined,
+        extendsModelName: undefined,
+        hasDeclarationSyntax: false,
+      });
+
+      expect(parseModelDeclaration('A extends AbstractA')).toEqual({
+        name: 'A',
+        isAbstract: undefined,
+        extendsModelName: 'AbstractA',
+        hasDeclarationSyntax: true,
+      });
+
+      expect(parseModelDeclaration('abstract class AbstractA')).toEqual({
+        name: 'AbstractA',
+        isAbstract: true,
+        extendsModelName: undefined,
+        hasDeclarationSyntax: true,
+      });
+
+      expect(parseModelDeclaration('abstract Customer extends BaseEntity')).toEqual({
+        name: 'Customer',
+        isAbstract: true,
+        extendsModelName: 'BaseEntity',
+        hasDeclarationSyntax: true,
+      });
+
+      expect(parseModelDeclaration('Customer : BaseEntity')).toEqual({
+        name: 'Customer',
+        isAbstract: undefined,
+        extendsModelName: 'BaseEntity',
+        hasDeclarationSyntax: true,
+      });
+
+      expect(parseModelDeclaration('public abstract class Customer<T> extends BaseEntity<T> {')).toEqual({
+        name: 'Customer',
+        isAbstract: true,
+        extendsModelName: 'BaseEntity',
+        hasDeclarationSyntax: true,
+      });
+    });
+
+    it('applies model declarations to models and project with auto-created parents', () => {
+      const project = createEmptyProject('DeclarationTest');
+      const model = createModel('DraftModel', []);
+      project.models = [model];
+
+      // 1. Rename and set abstract
+      applyModelDeclaration(project, model, 'abstract BaseDocument');
+      expect(model.name).toBe('BaseDocument');
+      expect(model.isAbstract).toBe(true);
+
+      // 2. Create another model extending BaseDocument
+      const invoice = createModel('InvoiceModel', []);
+      project.models.push(invoice);
+      applyModelDeclaration(project, invoice, 'Invoice extends BaseDocument');
+      expect(invoice.name).toBe('Invoice');
+      expect(invoice.extendsModelId).toBe(model.id);
+
+      // 3. Extending non-existing model creates parent automatically
+      const receipt = createModel('ReceiptModel', []);
+      project.models.push(receipt);
+      applyModelDeclaration(project, receipt, 'Receipt extends AbstractPrintable');
+      expect(receipt.name).toBe('Receipt');
+      const printable = project.models.find((m) => m.name === 'AbstractPrintable');
+      expect(printable).toBeDefined();
+      expect(printable?.isAbstract).toBe(true);
+      expect(receipt.extendsModelId).toBe(printable?.id);
+
+      // 4. Formatting declaration
+      expect(formatModelDeclaration(receipt, printable?.name)).toBe('Receipt extends AbstractPrintable');
+      expect(formatModelDeclaration(model)).toBe('abstract BaseDocument');
     });
   });
 });

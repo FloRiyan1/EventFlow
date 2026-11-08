@@ -9,6 +9,8 @@ import {
   sortModelFields,
   getDescendantModels,
   getInheritedFields,
+  parseModelDeclaration,
+  createModel,
 } from '@eventflow/core';
 import type { Model, FieldSortCriterion } from '@eventflow/core';
 import { X, Check, Database, Sparkles, ArrowUpDown, GitFork } from 'lucide-react';
@@ -81,17 +83,41 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
     ...new Set(parsedFields.flatMap((f) => referencedTypeNames(f.type))),
   ];
 
+  const parsedDecl = useMemo(() => parseModelDeclaration(name), [name]);
+
   const handleSave = () => {
     store.update((draft) => {
+      const p = parseModelDeclaration(name);
+      const cleanName = p.name || name.trim() || model.name;
+
       // Handle rename if needed
-      if (name.trim() && name.trim() !== model.name) {
-        renameModel(draft, model.id, name.trim());
+      if (cleanName && cleanName !== model.name) {
+        renameModel(draft, model.id, cleanName);
       }
+
       const targetModel = draft.models.find((m) => m.id === model.id);
       if (targetModel) {
         targetModel.fields = parsedFields;
-        targetModel.extendsModelId = extendsModelId || undefined;
-        targetModel.isAbstract = isAbstract;
+
+        let finalExtendsId = extendsModelId;
+        if (p.extendsModelName) {
+          let parent = draft.models.find(
+            (m) => m.name.toLowerCase() === p.extendsModelName?.toLowerCase()
+          );
+          if (!parent) {
+            parent = createModel(
+              p.extendsModelName,
+              [],
+              undefined,
+              /^abstract/i.test(p.extendsModelName)
+            );
+            draft.models.push(parent);
+          }
+          finalExtendsId = parent.id;
+        }
+
+        targetModel.extendsModelId = finalExtendsId || undefined;
+        targetModel.isAbstract = p.isAbstract ?? isAbstract;
       }
       // Auto-create missing models
       ensureModelsForFields(draft, parsedFields);
@@ -138,14 +164,71 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
         {/* Content */}
         <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1">Model Name</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1 flex items-center justify-between">
+              <span>Model Name</span>
+              <span className="text-[10px] text-slate-400 font-normal">
+                Syntax unterstützt: <code>Customer extends Base</code> oder <code>abstract A</code>
+              </span>
+            </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="z.B. TaetigkeitPositionRESTModel"
+              onBlur={() => {
+                const p = parseModelDeclaration(name);
+                if (p.hasDeclarationSyntax && p.name) {
+                  setName(p.name);
+                  if (p.isAbstract !== undefined) {
+                    setIsAbstract(p.isAbstract);
+                  }
+                  if (p.extendsModelName) {
+                    const pm = allModels.find(
+                      (m) => m.name.toLowerCase() === p.extendsModelName?.toLowerCase()
+                    );
+                    if (pm) {
+                      setExtendsModelId(pm.id);
+                    }
+                  }
+                }
+              }}
+              placeholder="z.B. Customer extends AbstractBase oder TaetigkeitPositionRESTModel"
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-semibold text-orange-600 dark:text-orange-300 focus:outline-none focus:border-orange-500 dark:focus:border-orange-400"
             />
+            {parsedDecl.hasDeclarationSyntax && (
+              <div className="mt-1.5 px-2.5 py-1.5 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-lg text-[11px] text-violet-700 dark:text-violet-300 flex items-center justify-between animate-in fade-in duration-100">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                  <span className="text-slate-600 dark:text-slate-400">Erkannt:</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100">{parsedDecl.name}</span>
+                  {parsedDecl.isAbstract && (
+                    <span className="font-mono text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 px-1.5 py-0.2 rounded font-semibold border border-purple-200 dark:border-purple-800">
+                      «abstract»
+                    </span>
+                  )}
+                  {parsedDecl.extendsModelName && (
+                    <span className="font-mono text-[10px] bg-violet-100 dark:bg-violet-900/60 text-violet-700 dark:text-violet-300 px-1.5 py-0.2 rounded font-semibold border border-violet-200 dark:border-violet-800">
+                      extends {parsedDecl.extendsModelName}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (parsedDecl.name) setName(parsedDecl.name);
+                    if (parsedDecl.isAbstract !== undefined) setIsAbstract(parsedDecl.isAbstract);
+                    if (parsedDecl.extendsModelName) {
+                      const pm = allModels.find(
+                        (m) => m.name.toLowerCase() === parsedDecl.extendsModelName?.toLowerCase()
+                      );
+                      if (pm) setExtendsModelId(pm.id);
+                    }
+                  }}
+                  className="px-2 py-0.5 bg-violet-100 dark:bg-violet-900/80 hover:bg-violet-200 dark:hover:bg-violet-800 text-violet-800 dark:text-violet-200 rounded font-semibold text-[10px] shrink-0 ml-2 transition-colors"
+                >
+                  Übernehmen
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Inheritance & Abstract Settings */}

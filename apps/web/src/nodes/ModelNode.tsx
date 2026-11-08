@@ -3,12 +3,13 @@ import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { useStore, useEditorStore } from '../storeContext';
 import type { ModelNode as ModelNodeType, Model, Field, FieldSortCriterion } from '@eventflow/core';
 import {
-  renameModel,
   fieldsFromText,
   ensureModelsForFields,
   reorderModelField,
   sortModelFields,
   getInheritedFields,
+  formatModelDeclaration,
+  applyModelDeclaration,
 } from '@eventflow/core';
 import {
   Database,
@@ -68,11 +69,18 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
     });
   };
 
+  const currentDeclaration = model ? formatModelDeclaration(model, parentModel?.name) : '';
+
+  const handleStartEditName = () => {
+    setNameDraft(currentDeclaration);
+    setIsEditingName(true);
+  };
+
   useEffect(() => {
-    if (model) {
-      setNameDraft(model.name);
+    if (model && !isEditingName) {
+      setNameDraft(currentDeclaration);
     }
-  }, [model?.name]);
+  }, [model?.name, model?.isAbstract, model?.extendsModelId, parentModel?.name, isEditingName, currentDeclaration]);
 
   useEffect(() => {
     if (isAddingField) {
@@ -88,15 +96,18 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
     );
   }
 
-  // Name save / cancel
+  // Name save / cancel (supports e.g. "Customer extends AbstractBase" or "abstract Customer")
   const handleSaveName = () => {
     const trimmed = nameDraft.trim();
-    if (trimmed && trimmed !== model.name) {
+    if (trimmed && trimmed !== currentDeclaration) {
       store.update((draft) => {
-        renameModel(draft, model.id, trimmed);
+        const m = draft.models.find((item) => item.id === model.id);
+        if (m) {
+          applyModelDeclaration(draft, m, trimmed);
+        }
       });
     } else {
-      setNameDraft(model.name);
+      setNameDraft(currentDeclaration);
     }
     setIsEditingName(false);
   };
@@ -242,20 +253,21 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSaveName();
                 if (e.key === 'Escape') {
-                  setNameDraft(model.name);
+                  setNameDraft(currentDeclaration);
                   setIsEditingName(false);
                 }
               }}
               onBlur={handleSaveName}
               autoFocus
+              placeholder="z.B. A extends AbstractA"
               className="nodrag nopan px-1.5 py-0.5 bg-white text-slate-900 rounded text-xs font-bold w-full outline-none ring-2 ring-slate-900 shadow-sm"
             />
           ) : (
             <div className="flex items-center gap-1.5 min-w-0">
               <span
-                onClick={() => setIsEditingName(true)}
+                onClick={handleStartEditName}
                 className="truncate cursor-pointer hover:bg-black/10 px-1 py-0.5 rounded transition-colors"
-                title="Klicken zum Umbenennen"
+                title="Klicken zum Bearbeiten (unterstützt z.B. 'A extends AbstractA')"
               >
                 {model.name}
               </span>
@@ -322,8 +334,8 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
             )}
           </div>
           <button
-            onClick={() => setIsEditingName(!isEditingName)}
-            title="Name inline umbenennen"
+            onClick={() => (isEditingName ? handleSaveName() : handleStartEditName())}
+            title="Name inline umbenennen / bearbeiten"
             className="p-1 hover:bg-black/10 rounded text-slate-900 opacity-60 hover:opacity-100 transition-opacity"
           >
             <Edit2 className="w-3.5 h-3.5" />

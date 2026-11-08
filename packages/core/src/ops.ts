@@ -722,3 +722,164 @@ export function sortModelFields(p: Project, model: Model, criterion: FieldSortCr
   });
 }
 
+// ---------------------------------------------------------------------------
+// Model declaration parsing and application (e.g. "Customer extends AbstractBase")
+// ---------------------------------------------------------------------------
+
+export interface ParsedModelDeclaration {
+  name: string;
+  isAbstract?: boolean;
+  extendsModelName?: string;
+  hasDeclarationSyntax: boolean;
+}
+
+/**
+ * Parses a model name/declaration string that may include keywords and inheritance syntax.
+ * Examples:
+ * - "Customer" -> { name: "Customer", isAbstract: false, hasDeclarationSyntax: false }
+ * - "A extends AbstractA" -> { name: "A", extendsModelName: "AbstractA", hasDeclarationSyntax: true }
+ * - "abstract class AbstractA" -> { name: "AbstractA", isAbstract: true, hasDeclarationSyntax: true }
+ * - "abstract Customer extends BaseEntity" -> { name: "Customer", isAbstract: true, extendsModelName: "BaseEntity", hasDeclarationSyntax: true }
+ * - "Customer : BaseEntity" -> { name: "Customer", extendsModelName: "BaseEntity", hasDeclarationSyntax: true }
+ */
+export function parseModelDeclaration(input: string): ParsedModelDeclaration {
+  const original = (input || '').trim();
+  if (!original) {
+    return { name: '', isAbstract: false, hasDeclarationSyntax: false };
+  }
+
+  let text = original;
+  let isAbstract: boolean | undefined = undefined;
+  let hasDeclarationSyntax = false;
+
+  // 1. Check for abstract keyword
+  if (/\babstract\b/i.test(text)) {
+    isAbstract = true;
+    hasDeclarationSyntax = true;
+    text = text.replace(/\babstract\b/gi, ' ');
+  }
+
+  // 2. Check for keywords (class, record, interface, public, internal, etc.)
+  if (/\b(class|record|interface|public|internal|protected|private)\b/i.test(text)) {
+    hasDeclarationSyntax = true;
+    text = text.replace(/\b(class|record|interface|public|internal|protected|private)\b/gi, ' ');
+  }
+
+  // 3. Strip implements clause if present (e.g. implements Serializable)
+  if (/\bimplements\b/i.test(text)) {
+    hasDeclarationSyntax = true;
+    text = text.replace(/\bimplements\s+[A-Za-z0-9_,\s<>]+/gi, ' ');
+  }
+
+  // 4. Check for extends clause: "extends ParentName"
+  let extendsModelName: string | undefined = undefined;
+  const extendsMatch = /\bextends\s+([A-Za-z0-9_]+)(?:<[^>]+>)?/i.exec(text);
+  if (extendsMatch) {
+    hasDeclarationSyntax = true;
+    extendsModelName = extendsMatch[1];
+    text = text.replace(/\bextends\s+[A-Za-z0-9_]+(?:<[^>]+>)?/gi, ' ');
+  } else {
+    // Check for colon inheritance: "Name : ParentName"
+    const colonMatch = /:\s*([A-Za-z0-9_]+)(?:<[^>]+>)?/.exec(text);
+    if (colonMatch) {
+      hasDeclarationSyntax = true;
+      extendsModelName = colonMatch[1];
+      text = text.replace(/:\s*[A-Za-z0-9_]+(?:<[^>]+>)?/g, ' ');
+    }
+  }
+
+  // 5. Strip generic parameters like <T> from the name
+  text = text.replace(/<[^>]+>/g, ' ');
+
+  // 6. Clean up braces, semicolons, parens
+  text = text.replace(/[{}\(\);]/g, ' ').trim();
+
+  // 7. Extract the name from remaining words
+  const words = text.split(/\s+/).filter(Boolean);
+  const name = words[0] || original.trim();
+
+  return {
+    name,
+    isAbstract,
+    extendsModelName,
+    hasDeclarationSyntax,
+  };
+}
+
+/**
+ * Formats a model declaration string from a model and its parent name.
+ * e.g. "abstract Customer extends BaseEntity" or "Customer"
+ */
+export function formatModelDeclaration(model: Model, parentModelName?: string): string {
+  const parts: string[] = [];
+  if (model.isAbstract) parts.push('abstract');
+  parts.push(model.name);
+  if (parentModelName) parts.push(`extends ${parentModelName}`);
+  return parts.join(' ');
+}
+
+/**
+ * Applies a declaration text to an existing model in a project.
+ * Handles renaming, setting/clearing isAbstract, resolving or auto-creating the parent model,
+ * and checking for circular inheritance cycles.
+ */
+export function applyModelDeclaration(
+  project: Project,
+  model: Model,
+  declarationText: string
+): {
+  name: string;
+  isAbstract: boolean;
+  extendsModelId?: string;
+  createdParent?: Model;
+} {
+  const parsed = parseModelDeclaration(declarationText);
+  if (!parsed.name) {
+    return {
+      name: model.name,
+      isAbstract: model.isAbstract ?? false,
+      extendsModelId: model.extendsModelId,
+    };
+  }
+
+  const oldName = model.name;
+  if (parsed.name !== oldName) {
+    renameModel(project, model.id, parsed.name);
+  }
+
+  let createdParent: Model | undefined = undefined;
+  let newExtendsModelId = model.extendsModelId;
+
+  if (parsed.extendsModelName) {
+    let parent = project.models.find((m) => m.name.toLowerCase() === parsed.extendsModelName?.toLowerCase());
+    if (!parent) {
+      const isParentAbstract = /^abstract/i.test(parsed.extendsModelName);
+      parent = createModel(parsed.extendsModelName, [], undefined, isParentAbstract);
+      project.models.push(parent);
+      createdParent = parent;
+    }
+
+    // Cycle check: parent cannot be the model itself or an existing descendant
+    const descendants = new Set(getDescendantModels(project, model.id).map((d) => d.id));
+    if (parent.id !== model.id && !descendants.has(parent.id)) {
+      newExtendsModelId = parent.id;
+      model.extendsModelId = parent.id;
+    }
+  } else if (parsed.hasDeclarationSyntax && !parsed.extendsModelName) {
+    // User explicitly wrote declaration syntax without extends (e.g. "Customer" or "abstract Customer" or "class Customer")
+    newExtendsModelId = undefined;
+    model.extendsModelId = undefined;
+  }
+
+  if (parsed.isAbstract !== undefined) {
+    model.isAbstract = parsed.isAbstract;
+  }
+
+  return {
+    name: model.name,
+    isAbstract: model.isAbstract ?? false,
+    extendsModelId: newExtendsModelId,
+    createdParent,
+  };
+}
+
