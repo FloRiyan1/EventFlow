@@ -226,63 +226,43 @@ const CanvasInner: React.FC<{
         type: node.kind,
         position: node.position,
         data: injectedData,
-        selected: selectedNodeIds.includes(node.id),
         style: {
           width: node.width ?? undefined,
           height: node.height ?? undefined,
         },
       };
     });
-  }, [activeBoard.nodes, project.models, project.endpoints, project.boards, selectedNodeIds]);
+  }, [activeBoard.nodes, project.models, project.endpoints, project.boards]);
 
   // Manage nodes and edges with React Flow's native state hooks
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Sync nodes from store while preserving measured dimensions & active selection smoothly without flickering
+  // Sync nodes from store while preserving measured dimensions & active selection smoothly
   useEffect(() => {
     setNodes((prevNodes) => {
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
-      let hasChanges = false;
-      const updated = rfNodes.map((newNode) => {
+      return rfNodes.map((newNode) => {
         const prev = prevMap.get(newNode.id);
-        const isSelected = selectedNodeIds.includes(newNode.id);
         if (!prev) {
-          hasChanges = true;
           return {
             ...newNode,
-            selected: isSelected,
+            selected: true,
           };
         }
-        const width = newNode.style?.width ?? prev.style?.width;
-        const height = newNode.style?.height ?? prev.style?.height;
-        const selectedChanged = prev.selected !== isSelected;
-        const posChanged = prev.position.x !== newNode.position.x || prev.position.y !== newNode.position.y;
-        const dataChanged = prev.data !== newNode.data;
-        const styleChanged = prev.style?.width !== width || prev.style?.height !== height;
-
-        if (selectedChanged || posChanged || dataChanged || styleChanged) {
-          hasChanges = true;
-        }
-
         return {
           ...newNode,
-          selected: isSelected,
+          selected: prev.selected ?? false,
           measured: prev.measured,
           style: {
             ...newNode.style,
-            width,
-            height,
+            width: newNode.style?.width ?? prev.style?.width,
+            height: newNode.style?.height ?? prev.style?.height,
           },
         };
       });
-
-      if (!hasChanges && prevNodes.length === rfNodes.length) {
-        return prevNodes;
-      }
-      return updated;
     });
-  }, [rfNodes, selectedNodeIds, setNodes]);
+  }, [rfNodes, setNodes]);
 
   // Helper to determine exact orthogonal handles per user rules:
   // 1. API <-> API and API <-> UI: immer links rein und rechts raus
@@ -895,6 +875,7 @@ const CanvasInner: React.FC<{
             if (!selectedNodeIds.includes(node.id)) {
               newSelected = [node.id];
               onSelectNodes(newSelected);
+              setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === node.id })));
             }
             const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
             let hasSubModels = false;

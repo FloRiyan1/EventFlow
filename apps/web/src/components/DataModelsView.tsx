@@ -991,7 +991,6 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         type: node.kind,
         position: node.position,
         data: injectedData,
-        selected: selectedNodeIds.includes(node.id),
         style: {
           width: node.width ?? undefined,
           height: node.height ?? undefined,
@@ -999,7 +998,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         },
       };
     });
-  }, [board.nodes, project.models, selectedNodeIds]);
+  }, [board.nodes, project.models]);
 
   // Transform domain edges into ReactFlow edges
   const rfEdges = useMemo<Edge[]>(() => {
@@ -1026,50 +1025,31 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Sync nodes from store and selection smoothly without flickering/race-conditions
+  // Sync nodes from store smoothly when board.nodes change; React Flow manages selection natively
   useEffect(() => {
     setNodes((prevNodes) => {
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
-      let hasChanges = false;
-      const updated = rfNodes.map((newNode) => {
+      return rfNodes.map((newNode) => {
         const prev = prevMap.get(newNode.id);
-        const isSelected = selectedNodeIds.includes(newNode.id);
         if (!prev) {
-          hasChanges = true;
           return {
             ...newNode,
-            selected: isSelected,
+            selected: true,
           };
         }
-        const width = newNode.style?.width ?? prev.style?.width;
-        const height = newNode.style?.height ?? prev.style?.height;
-        const selectedChanged = prev.selected !== isSelected;
-        const posChanged = prev.position.x !== newNode.position.x || prev.position.y !== newNode.position.y;
-        const dataChanged = prev.data !== newNode.data;
-        const styleChanged = prev.style?.width !== width || prev.style?.height !== height;
-
-        if (selectedChanged || posChanged || dataChanged || styleChanged) {
-          hasChanges = true;
-        }
-
         return {
           ...newNode,
-          selected: isSelected,
+          selected: prev.selected ?? false,
           measured: prev.measured,
           style: {
             ...newNode.style,
-            width,
-            height,
+            width: newNode.style?.width ?? prev.style?.width,
+            height: newNode.style?.height ?? prev.style?.height,
           },
         };
       });
-
-      if (!hasChanges && prevNodes.length === rfNodes.length) {
-        return prevNodes;
-      }
-      return updated;
     });
-  }, [rfNodes, selectedNodeIds, setNodes]);
+  }, [rfNodes, setNodes]);
 
   useEffect(() => {
     setEdges(rfEdges);
@@ -1669,6 +1649,9 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           if (!selectedNodeIds.includes(node.id)) {
             newSelected = [node.id];
             setSelectedNodeIds(newSelected);
+            setNodes((nds) =>
+              nds.map((n) => ({ ...n, selected: n.id === node.id }))
+            );
           }
           const flowPos = screenToFlowPosition({
             x: event.clientX,
