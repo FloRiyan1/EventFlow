@@ -21,11 +21,13 @@ import {
   FileUp,
   Sparkles,
   AlertCircle,
+  Edit2,
 } from 'lucide-react';
+import { PlantUmlLiveEditor } from './PlantUmlLiveEditor';
 
 interface Props {
   isOpen: boolean;
-  initialTab?: 'export' | 'import';
+  initialTab?: 'export' | 'import' | 'live';
   onClose: () => void;
   onShowToast?: (msg: string) => void;
   onOpenFlowsView?: () => void;
@@ -82,7 +84,7 @@ export const PlantUmlExportModal: React.FC<Props> = ({
   const activeBoardId = useStore((s) => s.activeBoardId);
   const activeBoard = project.boards.find((b) => b.id === activeBoardId) ?? project.boards[0];
 
-  const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'export' | 'import' | 'live'>(initialTab);
 
   // Sync initialTab when modal opens
   useEffect(() => {
@@ -239,12 +241,14 @@ export const PlantUmlExportModal: React.FC<Props> = ({
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {activeTab === 'export'
                   ? 'Generiere sofort einsatzbereiten PlantUML-Code für Flows, Architektur und Datenmodelle.'
-                  : 'Importiere bestehende PlantUML-Klassendiagramme oder Architektur-Flows nahtlos in dein Projekt.'}
+                  : activeTab === 'import'
+                  ? 'Importiere bestehende PlantUML-Klassendiagramme oder Architektur-Flows nahtlos in dein Projekt.'
+                  : 'Bearbeite deine Datenmodelle direkt und live im interaktiven PlantUML Code-Editor.'}
               </p>
             </div>
           </div>
 
-          {/* Tab Switcher: Export vs Import */}
+          {/* Tab Switcher: Export vs Import vs Live-Editor */}
           <div className="flex items-center gap-3">
             <div className="flex items-center p-1 bg-slate-200/80 dark:bg-slate-950 rounded-xl border border-slate-300/80 dark:border-slate-800 text-xs font-semibold">
               <button
@@ -268,6 +272,17 @@ export const PlantUmlExportModal: React.FC<Props> = ({
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>Importieren</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('live')}
+                className={`px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                  activeTab === 'live'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <FileCode className="w-3.5 h-3.5" />
+                <span>Live-Editor</span>
               </button>
             </div>
 
@@ -346,6 +361,16 @@ export const PlantUmlExportModal: React.FC<Props> = ({
                 {pumlCode.split('\n').length} Zeilen generiert
               </span>
               <div className="flex items-center gap-2">
+                {exportMode === 'models' && (
+                  <button
+                    onClick={() => setActiveTab('live')}
+                    className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
+                    title="Diesen Code im interaktiven Live-Editor bearbeiten"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Live bearbeiten</span>
+                  </button>
+                )}
                 <button
                   onClick={handleCopy}
                   className="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors border border-slate-300 dark:border-slate-700 shadow-sm"
@@ -366,7 +391,7 @@ export const PlantUmlExportModal: React.FC<Props> = ({
               </div>
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'import' ? (
           /* ------------------------------------------------------------------ */
           /* IMPORT TAB                                                         */
           /* ------------------------------------------------------------------ */
@@ -650,6 +675,13 @@ export const PlantUmlExportModal: React.FC<Props> = ({
                 </button>
               </div>
             </div>
+          </div>
+        ) : (
+          /* ------------------------------------------------------------------ */
+          /* LIVE-EDITOR TAB                                                    */
+          /* ------------------------------------------------------------------ */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <PlantUmlLiveEditor onShowToast={onShowToast} />
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ import type {
 } from './schema';
 import { uid } from './ids';
 import { createBoard, createModel, createEndpoint } from './factory';
+import { deleteModel, getDescendantModels } from './ops';
 
 export interface ParsedPlantUmlField {
   name: string;
@@ -21,6 +22,8 @@ export interface ParsedPlantUmlModel {
   name: string;
   fields: ParsedPlantUmlField[];
   rawAlias: string;
+  isAbstract?: boolean;
+  extendsName?: string;
 }
 
 export interface ParsedPlantUmlEndpoint {
@@ -47,6 +50,19 @@ export interface ParsedPlantUmlEdge {
   targetAlias: string;
   label?: string;
   isComposition?: boolean;
+  isInheritance?: boolean;
+  arrow?: string;
+}
+
+export interface SyncPlantUmlOptions {
+  deleteRemoved?: boolean;
+}
+
+export interface SyncPlantUmlResult {
+  updatedCount: number;
+  createdCount: number;
+  deletedCount: number;
+  models: Model[];
 }
 
 export interface PlantUmlParseResult {
@@ -100,9 +116,22 @@ function unescapePuml(str: string): string {
  */
 export function parsePumlField(raw: string): ParsedPlantUmlField | null {
   let line = raw.trim();
-  if (!line || line.startsWith("'") || line.startsWith('//') || line === '..') {
+  if (!line || line.startsWith("'") || line.startsWith('//')) {
     return null;
   }
+
+  // Skip class dividers: --, .., ==, __
+  if (/^[.\-=_]{2,}/.test(line)) {
+    return null;
+  }
+
+  // Skip methods (e.g. `foo(): void` or `validate()`)
+  if (line.includes('(')) {
+    return null;
+  }
+
+  // Strip PlantUML field annotations like {field}, {static}, {abstract}
+  line = line.replace(/^\{(field|static|abstract)\}\s*/i, '').trim();
 
   // Strip visibility symbols (+, -, #, ~)
   line = line.replace(/^[+\-#~]\s*/, '').trim();
@@ -147,11 +176,71 @@ export function parsePumlField(raw: string): ParsedPlantUmlField | null {
 
   // Fallback: single identifier treated as String field
   const clean = line.replace(/[^a-zA-Z0-9_]/g, '');
-  if (clean) {
+  if (clean && !clean.startsWith('node_')) {
     return { name: clean, type: 'String', nullable: false };
   }
 
   return null;
+}
+
+/**
+ * Parses a PlantUML class declaration line.
+ * Supports:
+ * - class Name
+ * - class "Name" as alias
+ * - abstract class Name
+ * - abstract class "Name" as alias #Color {
+ * - class Name extends Parent
+ * - class "Name" as alias extends Parent {
+ */
+export function parsePumlClassHeader(line: string): {
+  isAbstract: boolean;
+  name: string;
+  rawAlias: string;
+  extendsName?: string;
+  hasOpenBrace: boolean;
+} | null {
+  const prefixMatch = line.match(/^(?:(abstract)\s+)?(?:class|interface)\s+(.*)$/i);
+  if (!prefixMatch) return null;
+
+  const isAbstract = Boolean(prefixMatch[1]);
+  let rest = prefixMatch[2].trim();
+  const hasOpenBrace = rest.endsWith('{');
+  if (hasOpenBrace) {
+    rest = rest.slice(0, -1).trim();
+  }
+  // Strip background color like #FFF7ED or #aliceblue
+  rest = rest.replace(/#[a-zA-Z0-9_]+\s*$/, '').trim();
+
+  // Check for extends clause: extends Parent or extends "Parent"
+  let extendsName: string | undefined = undefined;
+  const extendsMatch = rest.match(/\bextends\s+(?:"([^"]+)"|([a-zA-Z0-9_]+))/i);
+  if (extendsMatch) {
+    extendsName = extendsMatch[1] || extendsMatch[2];
+    rest = rest.replace(/\bextends\s+(?:"[^"]+"|([a-zA-Z0-9_]+))/i, ' ').trim();
+  }
+
+  // Check for as alias: as alias or as "alias"
+  let rawAlias: string | undefined = undefined;
+  const asMatch = rest.match(/\bas\s+(?:"([^"]+)"|([a-zA-Z0-9_]+))/i);
+  if (asMatch) {
+    rawAlias = asMatch[1] || asMatch[2];
+    rest = rest.replace(/\bas\s+(?:"[^"]+"|([a-zA-Z0-9_]+))/i, ' ').trim();
+  }
+
+  // What remains is the class name
+  const nameMatch = rest.match(/^(?:"([^"]+)"|([a-zA-Z0-9_]+))/);
+  if (!nameMatch) return null;
+  const name = nameMatch[1] || nameMatch[2];
+  if (!rawAlias) rawAlias = name;
+
+  return {
+    isAbstract,
+    name,
+    rawAlias,
+    extendsName,
+    hasOpenBrace,
+  };
 }
 
 /**
@@ -267,30 +356,28 @@ export function parsePlantUml(pumlCode: string): PlantUmlParseResult {
       continue;
     }
 
-    // 8. Class definition: `class "Name" as alias {` or `class Name {`
-    const classMatch = line.match(/^class\s+(?:"([^"]+)"|([a-zA-Z0-9_]+))(?:\s+as\s+([a-zA-Z0-9_]+))?(?:[^{]*)\{/i);
-    if (classMatch) {
-      inClass = true;
-      const className = classMatch[1] || classMatch[2];
-      const classAlias = classMatch[3] || className;
-      currentClassModel = {
-        name: className,
-        rawAlias: classAlias,
-        fields: [],
-      };
-      continue;
-    }
-
-    // Standalone class: `class Name`
-    const simpleClassMatch = line.match(/^class\s+(?:"([^"]+)"|([a-zA-Z0-9_]+))(?:\s+as\s+([a-zA-Z0-9_]+))?$/i);
-    if (simpleClassMatch) {
-      const className = simpleClassMatch[1] || simpleClassMatch[2];
-      const classAlias = simpleClassMatch[3] || className;
-      result.models.push({
-        name: className,
-        rawAlias: classAlias,
-        fields: [],
-      });
+    // 8. Class definition (class, abstract class, with optional extends and alias)
+    const classHeader = parsePumlClassHeader(line);
+    if (classHeader) {
+      if (classHeader.hasOpenBrace) {
+        inClass = true;
+        currentClassModel = {
+          name: classHeader.name,
+          rawAlias: classHeader.rawAlias,
+          isAbstract: classHeader.isAbstract,
+          extendsName: classHeader.extendsName,
+          fields: [],
+        };
+      } else {
+        // Standalone class declaration: class Name or class Name extends Parent
+        result.models.push({
+          name: classHeader.name,
+          rawAlias: classHeader.rawAlias,
+          isAbstract: classHeader.isAbstract,
+          extendsName: classHeader.extendsName,
+          fields: [],
+        });
+      }
       continue;
     }
 
@@ -306,21 +393,47 @@ export function parsePlantUml(pumlCode: string): PlantUmlParseResult {
     }
 
     // 10. Edges / Connections
-    const edgeMatch = line.match(/^([a-zA-Z0-9_]+)(?:\s+"[^"]*")?\s*(-->|->|\.\.>|<--|<-|\*--|o--|--)\s*(?:"[^"]*"\s*)?([a-zA-Z0-9_]+)(?:\s*:\s*(.*))?$/);
+    // Support standard arrows, composition/aggregation (*--, o--), and inheritance (<|--, <|.., --|>, ..|>)
+    const edgeMatch = line.match(
+      /^(?:"([^"]+)"|([a-zA-Z0-9_]+))(?:\s+"[^"]*")?\s*(<\|--|<\|\.\.|--\|>|\.\.\|>|-->|->|\.\.>|<--|<-|\*--|o--|--)\s*(?:"[^"]*"\s*)?(?:"([^"]+)"|([a-zA-Z0-9_]+))(?:\s*:\s*(.*))?$/
+    );
     if (edgeMatch) {
-      const sourceAlias = edgeMatch[1];
-      const arrow = edgeMatch[2];
-      const targetAlias = edgeMatch[3];
-      const label = edgeMatch[4] ? unescapePuml(edgeMatch[4].trim()) : undefined;
+      const sourceAlias = edgeMatch[1] || edgeMatch[2];
+      const arrow = edgeMatch[3];
+      const targetAlias = edgeMatch[4] || edgeMatch[5];
+      const label = edgeMatch[6] ? unescapePuml(edgeMatch[6].trim()) : undefined;
       const isComposition = arrow.includes('*--') || arrow.includes('o--');
+      const isInheritance = arrow.includes('<|') || arrow.includes('|>');
 
       result.edges.push({
         sourceAlias,
         targetAlias,
         label,
         isComposition,
+        isInheritance,
+        arrow,
       });
       continue;
+    }
+  }
+
+  // Link inheritance from edges to models
+  for (const edge of result.edges) {
+    if (edge.isInheritance && edge.arrow) {
+      const isLeft = edge.arrow.includes('<|');
+      const parentKey = isLeft ? edge.sourceAlias : edge.targetAlias;
+      const childKey = isLeft ? edge.targetAlias : edge.sourceAlias;
+
+      const child = result.models.find(
+        (m) => m.rawAlias === childKey || m.name.toLowerCase() === childKey.toLowerCase()
+      );
+      const parent = result.models.find(
+        (m) => m.rawAlias === parentKey || m.name.toLowerCase() === parentKey.toLowerCase()
+      );
+
+      if (child) {
+        child.extendsName = parent ? parent.name : parentKey;
+      }
     }
   }
 
@@ -331,6 +444,8 @@ export function parsePlantUml(pumlCode: string): PlantUmlParseResult {
       uniqueModels.set(m.name, m);
     } else {
       const existing = uniqueModels.get(m.name)!;
+      if (m.isAbstract !== undefined) existing.isAbstract = m.isAbstract;
+      if (m.extendsName) existing.extendsName = m.extendsName;
       for (const f of m.fields) {
         if (!existing.fields.some((ef) => ef.name === f.name)) {
           existing.fields.push(f);
@@ -583,6 +698,9 @@ export function importPlantUmlIntoProject(
       );
 
       if (existing) {
+        if (pModel.isAbstract !== undefined) {
+          existing.isAbstract = pModel.isAbstract;
+        }
         for (const pf of pModel.fields) {
           if (!existing.fields.some((ef) => ef.name === pf.name)) {
             existing.fields.push({
@@ -603,12 +721,30 @@ export function importPlantUmlIntoProject(
             name: pf.name,
             type: pf.type,
             nullable: pf.nullable,
-          }))
+          })),
+          undefined,
+          pModel.isAbstract
         );
         project.models.push(newModel);
         stats.createdModels.push(newModel);
         aliasToModel.set(pModel.rawAlias, newModel);
         aliasToModel.set(pModel.name, newModel);
+      }
+    }
+
+    // Resolve model inheritance relationships
+    for (const pModel of parsed.models) {
+      if (pModel.extendsName) {
+        const child = aliasToModel.get(pModel.rawAlias) || aliasToModel.get(pModel.name);
+        const parent =
+          aliasToModel.get(pModel.extendsName) ||
+          project.models.find((m) => m.name.toLowerCase() === pModel.extendsName?.toLowerCase());
+        if (child && parent && child.id !== parent.id) {
+          const descendants = new Set(getDescendantModels(project, child.id).map((d) => d.id));
+          if (!descendants.has(parent.id)) {
+            child.extendsModelId = parent.id;
+          }
+        }
       }
     }
   }
@@ -814,4 +950,135 @@ export function importPlantUmlIntoProject(
   }
 
   return stats;
+}
+
+/**
+ * Synchronizes PlantUML class diagram code live with a project's data models.
+ * Preserves existing model and field IDs where matching, creates new models and fields,
+ * updates types, nullability, abstract status, and inheritance relationships.
+ * If deleteRemoved is true, models that are not in the PlantUML code are safely removed.
+ */
+export function syncPlantUmlModelsWithProject(
+  project: Project,
+  pumlCode: string,
+  options: SyncPlantUmlOptions = {}
+): SyncPlantUmlResult {
+  const parsed = parsePlantUml(pumlCode);
+  const deleteRemoved = options.deleteRemoved ?? false;
+
+  const touchedModelIds = new Set<string>();
+  let createdCount = 0;
+  let updatedCount = 0;
+  let deletedCount = 0;
+
+  // 1. Pass: create or update models and fields
+  for (const pModel of parsed.models) {
+    // Check if alias matches node_<id>
+    let existing: Model | undefined = undefined;
+    if (pModel.rawAlias.startsWith('node_')) {
+      const candidateId = pModel.rawAlias.replace(/^node_/, '');
+      existing = project.models.find(
+        (m) =>
+          m.id === candidateId ||
+          m.id.replace(/[^a-zA-Z0-9_]/g, '_') === candidateId
+      );
+    }
+    if (!existing) {
+      existing = project.models.find(
+        (m) => m.name.toLowerCase() === pModel.name.toLowerCase()
+      );
+    }
+
+    if (existing) {
+      touchedModelIds.add(existing.id);
+      existing.name = pModel.name;
+      existing.isAbstract = Boolean(pModel.isAbstract);
+
+      // Update fields: retain existing field IDs where names match
+      const existingFieldsMap = new Map(
+        existing.fields.map((f) => [f.name.toLowerCase(), f])
+      );
+      const newFields = pModel.fields.map((pf) => {
+        const ef = existingFieldsMap.get(pf.name.toLowerCase());
+        if (ef) {
+          ef.name = pf.name;
+          ef.type = pf.type;
+          ef.nullable = pf.nullable;
+          return ef;
+        } else {
+          return {
+            id: uid('f_'),
+            name: pf.name,
+            type: pf.type,
+            nullable: pf.nullable,
+          };
+        }
+      });
+      existing.fields = newFields;
+      updatedCount++;
+    } else {
+      const newModel = createModel(
+        pModel.name,
+        pModel.fields.map((pf) => ({
+          id: uid('f_'),
+          name: pf.name,
+          type: pf.type,
+          nullable: pf.nullable,
+        })),
+        undefined,
+        Boolean(pModel.isAbstract)
+      );
+      project.models.push(newModel);
+      touchedModelIds.add(newModel.id);
+      createdCount++;
+    }
+  }
+
+  // 2. Pass: resolve inheritance (extendsModelId)
+  for (const pModel of parsed.models) {
+    const model = project.models.find(
+      (m) =>
+        m.name.toLowerCase() === pModel.name.toLowerCase() ||
+        (pModel.rawAlias.startsWith('node_') &&
+          (m.id === pModel.rawAlias.replace(/^node_/, '') ||
+            m.id.replace(/[^a-zA-Z0-9_]/g, '_') === pModel.rawAlias.replace(/^node_/, '')))
+    );
+    if (!model) continue;
+
+    if (pModel.extendsName) {
+      const parent = project.models.find(
+        (m) =>
+          m.name.toLowerCase() === pModel.extendsName?.toLowerCase() ||
+          (pModel.extendsName?.startsWith('node_') &&
+            (m.id === pModel.extendsName.replace(/^node_/, '') ||
+              m.id.replace(/[^a-zA-Z0-9_]/g, '_') === pModel.extendsName.replace(/^node_/, '')))
+      );
+      if (parent && parent.id !== model.id) {
+        // Prevent cycle
+        const descendants = new Set(getDescendantModels(project, model.id).map((d) => d.id));
+        if (!descendants.has(parent.id)) {
+          model.extendsModelId = parent.id;
+        }
+      }
+    } else {
+      // If no extends is declared in PUML, clear extendsModelId
+      model.extendsModelId = undefined;
+    }
+  }
+
+  // 3. Optionally delete removed models
+  if (deleteRemoved) {
+    const toDelete = project.models.filter((m) => !touchedModelIds.has(m.id));
+    for (const m of toDelete) {
+      deleteModel(project, m.id);
+      deletedCount++;
+    }
+  }
+
+  return {
+    updatedCount,
+    createdCount,
+    deletedCount,
+    models: project.models,
+  };
 }

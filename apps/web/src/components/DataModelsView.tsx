@@ -98,10 +98,11 @@ import { StepWithDeleteEdge } from '../edges/StepWithDeleteEdge';
 import { AlignmentGuideLines } from './AlignmentGuideLines';
 import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
 import { ImportModelsModal } from './ImportModelsModal';
+import { PlantUmlLiveEditor } from './PlantUmlLiveEditor';
 
 interface DataModelsViewProps {
-  viewMode?: 'canvas' | 'tree' | 'erd';
-  onViewModeChange?: (mode: 'canvas' | 'tree' | 'erd') => void;
+  viewMode?: 'canvas' | 'tree' | 'erd' | 'puml';
+  onViewModeChange?: (mode: 'canvas' | 'tree' | 'erd' | 'puml') => void;
   onEditModel: (modelId: string) => void;
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlImport?: () => void;
@@ -2100,8 +2101,8 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   const activeBoardId = useStore((s) => s.activeBoardId);
   const { theme } = useTheme();
 
-  // Mode: 'canvas' (Freier interaktiver Canvas) vs 'tree' (Hierarchie-Baum) vs 'erd' (Auto-Diagramm)
-  const [internalViewMode, setInternalViewMode] = useState<'canvas' | 'tree' | 'erd'>('canvas');
+  // Mode: 'canvas' (Freier interaktiver Canvas) vs 'tree' (Hierarchie-Baum) vs 'erd' (Auto-Diagramm) vs 'puml' (Live-Editor)
+  const [internalViewMode, setInternalViewMode] = useState<'canvas' | 'tree' | 'erd' | 'puml'>('canvas');
   const viewMode = propViewMode ?? internalViewMode;
   const setViewMode = onViewModeChange ?? setInternalViewMode;
 
@@ -3096,7 +3097,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
             )}
           </div>
         </div>
-      ) : (
+      ) : viewMode === 'erd' ? (
         /* ------------------------------------------------------------------- */
         /* MODE 3: AUTO-LAYOUT (ERD)                                           */
         /* ------------------------------------------------------------------- */
@@ -3267,6 +3268,14 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
             )}
           </div>
         </div>
+      ) : (
+        /* ------------------------------------------------------------------- */
+        /* MODE 4: PLANTUML LIVE-EDITOR                                        */
+        /* ------------------------------------------------------------------- */
+        <PlantUmlLiveEditor
+          onShowToast={onShowToast}
+          onEditModel={onEditModel}
+        />
       )}
 
       {/* Delete Confirmation Modal */}

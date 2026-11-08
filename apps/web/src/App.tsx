@@ -1084,7 +1084,7 @@ const AppContent: React.FC = () => {
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'flows' | 'models'>('flows');
-  const [modelViewMode, setModelViewMode] = useState<'canvas' | 'tree' | 'erd'>('canvas');
+  const [modelViewMode, setModelViewMode] = useState<'canvas' | 'tree' | 'erd' | 'puml'>('canvas');
   const lastFlowBoardIdRef = useRef<string | null>(null);
   const lastModelBoardIdRef = useRef<string | null>(null);
 

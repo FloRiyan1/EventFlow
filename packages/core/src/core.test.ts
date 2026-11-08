@@ -35,6 +35,7 @@ import {
   parseModelDeclaration,
   formatModelDeclaration,
   applyModelDeclaration,
+  syncPlantUmlModelsWithProject,
 } from './index';
 
 describe('Field Parser', () => {
@@ -907,6 +908,113 @@ n2 --> n3 : returns
       // 4. Formatting declaration
       expect(formatModelDeclaration(receipt, printable?.name)).toBe('Receipt extends AbstractPrintable');
       expect(formatModelDeclaration(model)).toBe('abstract BaseDocument');
+    });
+  });
+
+  describe('PlantUML Live Model Parsing and Synchronization', () => {
+    it('parses abstract classes, extends clauses, and inheritance arrows', () => {
+      const puml = `
+@startuml
+abstract class "BaseEntity" as base #FFF7ED {
+  +id: String
+  +createdAt: DateTime?
+}
+
+class "Customer" as cust {
+  +customerNumber: String
+}
+
+class "VIPCustomer" as vip extends Customer {
+  +vipLevel: int
+}
+
+base <|-- cust : extends
+@enduml
+      `;
+
+      const result = parsePlantUml(puml);
+      expect(result.models).toHaveLength(3);
+
+      const base = result.models.find((m) => m.name === 'BaseEntity');
+      expect(base?.isAbstract).toBe(true);
+      expect(base?.fields).toHaveLength(2);
+
+      const cust = result.models.find((m) => m.name === 'Customer');
+      expect(cust?.isAbstract).toBe(false);
+      expect(cust?.extendsName).toBe('BaseEntity');
+
+      const vip = result.models.find((m) => m.name === 'VIPCustomer');
+      expect(vip?.extendsName).toBe('Customer');
+    });
+
+    it('synchronizes PlantUML models live with a project, updating fields and inheritance', () => {
+      const project = createEmptyProject('LiveSyncTest');
+      const baseModel = createModel('BaseEntity', [
+        { id: 'f_id', name: 'id', type: 'String', nullable: false },
+      ], undefined, true);
+      const userModel = createModel('User', [
+        { id: 'f_name', name: 'name', type: 'String', nullable: false },
+      ]);
+      project.models = [baseModel, userModel];
+
+      // Export to PlantUML class diagram
+      const exported = exportModelsToPlantUml(project);
+
+      // Modify PlantUML: add a field to User, set User to inherit from BaseEntity, and add a new Order model
+      const updatedPuml = `
+@startuml
+abstract class "BaseEntity" as node_${baseModel.id} #FFF7ED {
+  +id: String
+  +version: int?
+}
+
+class "User" as node_${userModel.id} #FFF7ED {
+  +name: String
+  +email: String?
+}
+
+class "Order" {
+  +orderNumber: String
+  +total: double
+}
+
+node_${baseModel.id} <|-- node_${userModel.id} : extends
+@enduml
+      `;
+
+      const syncResult = syncPlantUmlModelsWithProject(project, updatedPuml);
+      expect(syncResult.createdCount).toBe(1); // Order created
+      expect(syncResult.updatedCount).toBe(2); // BaseEntity and User updated
+
+      // Verify User
+      const updatedUser = project.models.find((m) => m.id === userModel.id);
+      expect(updatedUser).toBeDefined();
+      expect(updatedUser?.fields).toHaveLength(2);
+      expect(updatedUser?.fields.find((f) => f.name === 'name')?.id).toBe('f_name'); // preserved field ID
+      expect(updatedUser?.fields.find((f) => f.name === 'email')?.nullable).toBe(true);
+      expect(updatedUser?.extendsModelId).toBe(baseModel.id); // inherited from BaseEntity!
+
+      // Verify BaseEntity
+      const updatedBase = project.models.find((m) => m.id === baseModel.id);
+      expect(updatedBase?.isAbstract).toBe(true);
+      expect(updatedBase?.fields).toHaveLength(2);
+      expect(updatedBase?.fields.find((f) => f.name === 'version')?.type).toBe('int');
+
+      // Verify Order
+      const newOrder = project.models.find((m) => m.name === 'Order');
+      expect(newOrder).toBeDefined();
+      expect(newOrder?.fields).toHaveLength(2);
+
+      // Verify clearing inheritance when removed in PUML
+      const noInheritancePuml = `
+@startuml
+class "User" as node_${userModel.id} {
+  +name: String
+}
+@enduml
+      `;
+      syncPlantUmlModelsWithProject(project, noInheritancePuml);
+      expect(updatedUser?.extendsModelId).toBeUndefined();
     });
   });
 });

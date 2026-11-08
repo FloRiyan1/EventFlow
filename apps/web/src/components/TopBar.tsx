@@ -31,8 +31,8 @@ import { useTheme } from '../themeContext';
 interface Props {
   activeView?: 'flows' | 'models';
   onSelectView?: (view: 'flows' | 'models') => void;
-  modelViewMode?: 'canvas' | 'tree' | 'erd';
-  onSelectModelViewMode?: (mode: 'canvas' | 'tree' | 'erd') => void;
+  modelViewMode?: 'canvas' | 'tree' | 'erd' | 'puml';
+  onSelectModelViewMode?: (mode: 'canvas' | 'tree' | 'erd' | 'puml') => void;
   onOpenPlantUmlExport?: () => void;
   onOpenPlantUmlModal?: (tab?: 'export' | 'import') => void;
   onOpenJavaModal?: (tab?: 'export' | 'import') => void;
@@ -292,7 +292,13 @@ export const TopBar: React.FC<Props> = ({
           )
         ) : (
           <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
-            {modelViewMode === 'canvas' ? (activeBoard?.name || 'Datenmodell-Canvas') : modelViewMode === 'tree' ? 'Hierarchie-Baum' : 'Auto-Layout (ERD)'}
+            {modelViewMode === 'canvas'
+              ? (activeBoard?.name || 'Datenmodell-Canvas')
+              : modelViewMode === 'tree'
+              ? 'Hierarchie-Baum'
+              : modelViewMode === 'erd'
+              ? 'Auto-Layout (ERD)'
+              : 'PlantUML Live-Editor'}
           </span>
         )}
       </div>
@@ -421,6 +427,18 @@ export const TopBar: React.FC<Props> = ({
                 >
                   <Network className="w-3.5 h-3.5" />
                   <span>Auto-Layout</span>
+                </button>
+                <button
+                  onClick={() => onSelectModelViewMode('puml')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    modelViewMode === 'puml'
+                      ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Live PlantUML Code-Editor für Datenmodelle"
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>PlantUML Live</span>
                 </button>
               </div>
             )}
