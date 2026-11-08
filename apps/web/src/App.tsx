@@ -226,57 +226,63 @@ const CanvasInner: React.FC<{
         type: node.kind,
         position: node.position,
         data: injectedData,
+        selected: selectedNodeIds.includes(node.id),
         style: {
           width: node.width ?? undefined,
           height: node.height ?? undefined,
         },
       };
     });
-  }, [activeBoard.nodes, project.models, project.endpoints, project.boards]);
+  }, [activeBoard.nodes, project.models, project.endpoints, project.boards, selectedNodeIds]);
 
   // Manage nodes and edges with React Flow's native state hooks
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Sync nodes from store while preserving measured dimensions & active selection
+  // Sync nodes from store while preserving measured dimensions & active selection smoothly without flickering
   useEffect(() => {
     setNodes((prevNodes) => {
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
-      return rfNodes.map((newNode) => {
+      let hasChanges = false;
+      const updated = rfNodes.map((newNode) => {
         const prev = prevMap.get(newNode.id);
+        const isSelected = selectedNodeIds.includes(newNode.id);
         if (!prev) {
+          hasChanges = true;
           return {
             ...newNode,
-            selected: selectedNodeIds.includes(newNode.id),
+            selected: isSelected,
           };
         }
+        const width = newNode.style?.width ?? prev.style?.width;
+        const height = newNode.style?.height ?? prev.style?.height;
+        const selectedChanged = prev.selected !== isSelected;
+        const posChanged = prev.position.x !== newNode.position.x || prev.position.y !== newNode.position.y;
+        const dataChanged = prev.data !== newNode.data;
+        const styleChanged = prev.style?.width !== width || prev.style?.height !== height;
+
+        if (selectedChanged || posChanged || dataChanged || styleChanged) {
+          hasChanges = true;
+        }
+
         return {
           ...newNode,
-          selected: prev.selected ?? selectedNodeIds.includes(newNode.id),
+          selected: isSelected,
           measured: prev.measured,
           style: {
             ...newNode.style,
-            width: newNode.style?.width ?? prev.style?.width,
-            height: newNode.style?.height ?? prev.style?.height,
+            width,
+            height,
           },
         };
       });
-    });
-  }, [rfNodes, setNodes]);
 
-  // Sync external selection changes into nodes state smoothly
-  useEffect(() => {
-    setNodes((prevNodes) => {
-      let changed = false;
-      const updated = prevNodes.map((n) => {
-        const isSelected = selectedNodeIds.includes(n.id);
-        if (n.selected === isSelected) return n;
-        changed = true;
-        return { ...n, selected: isSelected };
-      });
-      return changed ? updated : prevNodes;
+      if (!hasChanges && prevNodes.length === rfNodes.length) {
+        return prevNodes;
+      }
+      return updated;
     });
-  }, [selectedNodeIds, setNodes]);
+  }, [rfNodes, selectedNodeIds, setNodes]);
 
   // Helper to determine exact orthogonal handles per user rules:
   // 1. API <-> API and API <-> UI: immer links rein und rechts raus

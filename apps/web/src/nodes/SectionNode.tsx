@@ -68,11 +68,9 @@ export const SectionNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative w-full h-full rounded-2xl border-2 border-dashed transition-all group select-none ${
+      className={`relative w-full h-full rounded-2xl border-2 border-dashed transition-colors group select-none ${
         activeColor.border
-      } ${activeColor.bg} ${
-        selected ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-blue-400' : ''
-      }`}
+      } ${activeColor.bg}`}
       style={{
         width: '100%',
         height: '100%',

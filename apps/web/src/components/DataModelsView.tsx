@@ -991,6 +991,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         type: node.kind,
         position: node.position,
         data: injectedData,
+        selected: selectedNodeIds.includes(node.id),
         style: {
           width: node.width ?? undefined,
           height: node.height ?? undefined,
@@ -998,7 +999,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         },
       };
     });
-  }, [board.nodes, project.models]);
+  }, [board.nodes, project.models, selectedNodeIds]);
 
   // Transform domain edges into ReactFlow edges
   const rfEdges = useMemo<Edge[]>(() => {
@@ -1025,48 +1026,54 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  // Sync nodes from store and selection smoothly without flickering/race-conditions
   useEffect(() => {
     setNodes((prevNodes) => {
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
-      return rfNodes.map((newNode) => {
+      let hasChanges = false;
+      const updated = rfNodes.map((newNode) => {
         const prev = prevMap.get(newNode.id);
+        const isSelected = selectedNodeIds.includes(newNode.id);
         if (!prev) {
+          hasChanges = true;
           return {
             ...newNode,
-            selected: selectedNodeIds.includes(newNode.id),
+            selected: isSelected,
           };
         }
+        const width = newNode.style?.width ?? prev.style?.width;
+        const height = newNode.style?.height ?? prev.style?.height;
+        const selectedChanged = prev.selected !== isSelected;
+        const posChanged = prev.position.x !== newNode.position.x || prev.position.y !== newNode.position.y;
+        const dataChanged = prev.data !== newNode.data;
+        const styleChanged = prev.style?.width !== width || prev.style?.height !== height;
+
+        if (selectedChanged || posChanged || dataChanged || styleChanged) {
+          hasChanges = true;
+        }
+
         return {
           ...newNode,
-          selected: prev.selected ?? selectedNodeIds.includes(newNode.id),
+          selected: isSelected,
           measured: prev.measured,
           style: {
             ...newNode.style,
-            width: newNode.style?.width ?? prev.style?.width,
-            height: newNode.style?.height ?? prev.style?.height,
+            width,
+            height,
           },
         };
       });
+
+      if (!hasChanges && prevNodes.length === rfNodes.length) {
+        return prevNodes;
+      }
+      return updated;
     });
-  }, [rfNodes, setNodes]);
+  }, [rfNodes, selectedNodeIds, setNodes]);
 
   useEffect(() => {
     setEdges(rfEdges);
   }, [rfEdges, setEdges]);
-
-  // Sync external selection into nodes state smoothly
-  useEffect(() => {
-    setNodes((prevNodes) => {
-      let changed = false;
-      const updated = prevNodes.map((n) => {
-        const isSelected = selectedNodeIds.includes(n.id);
-        if (n.selected === isSelected) return n;
-        changed = true;
-        return { ...n, selected: isSelected };
-      });
-      return changed ? updated : prevNodes;
-    });
-  }, [selectedNodeIds, setNodes]);
 
   // Connecting model nodes
   const onConnect: OnConnect = useCallback(

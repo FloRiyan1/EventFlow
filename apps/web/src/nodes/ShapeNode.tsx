@@ -68,7 +68,7 @@ export const ShapeNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative w-full h-full flex flex-col items-center justify-center transition-all group ${
+      className={`relative w-full h-full flex flex-col items-center justify-center transition-colors group ${
         isText
           ? 'bg-transparent'
           : isCircle
@@ -76,8 +76,6 @@ export const ShapeNode = memo(({ id, data, selected }: Props) => {
           : 'rounded-xl shadow-sm'
       } ${
         !isText && (data.color === 'transparent' ? 'border-2 border-dashed border-slate-400' : 'border border-slate-300 dark:border-slate-700')
-      } ${
-        selected ? 'ring-2 ring-orange-500' : ''
       }`}
       style={{
         width: '100%',
