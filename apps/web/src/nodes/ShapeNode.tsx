@@ -174,8 +174,7 @@ export const ShapeNode = memo(({ id, data, selected }: Props) => {
       {/* Text display / editing */}
       {!isEditing ? (
         <div
-          onDoubleClick={(e) => {
-            e.stopPropagation();
+          onDoubleClick={() => {
             setIsEditing(true);
           }}
           className={`w-full h-full flex items-center justify-center p-2 text-center select-none cursor-move break-words ${

@@ -248,11 +248,14 @@ const CanvasInner: React.FC<{
           return {
             ...newNode,
             selected: true,
+            draggable: true,
           };
         }
+        const isSelected = prev.selected ?? false;
         return {
           ...newNode,
-          selected: prev.selected ?? false,
+          selected: isSelected,
+          draggable: canvasMode === 'edit' ? true : isSelected,
           measured: prev.measured,
           style: {
             ...newNode.style,
@@ -262,7 +265,7 @@ const CanvasInner: React.FC<{
         };
       });
     });
-  }, [rfNodes, setNodes]);
+  }, [rfNodes, setNodes, canvasMode]);
 
   // Helper to determine exact orthogonal handles per user rules:
   // 1. API <-> API and API <-> UI: immer links rein und rechts raus
@@ -698,6 +701,46 @@ const CanvasInner: React.FC<{
       [screenToFlowPosition, store, activeBoardId, onSelectNodes, onShowToast]
     );
 
+    // Double click node in any mode (including Bewegen-Modus) to edit and enable moving it
+    const handleNodeDoubleClick = useCallback(
+      (_event: React.MouseEvent, node: Node) => {
+        onSelectNodes([node.id]);
+        setNodes((nds) =>
+          nds.map((n) => ({
+            ...n,
+            selected: n.id === node.id,
+            draggable: true,
+          }))
+        );
+        if (node.type === 'model') {
+          const nodeData = activeBoard.nodes.find((n) => n.id === node.id);
+          if (nodeData && nodeData.kind === 'model') {
+            window.dispatchEvent(
+              new CustomEvent('eventflow:edit-model', {
+                detail: { modelId: nodeData.modelId },
+              })
+            );
+          }
+        } else if (node.type === 'endpoint') {
+          const nodeData = activeBoard.nodes.find((n) => n.id === node.id);
+          if (nodeData && nodeData.kind === 'endpoint') {
+            window.dispatchEvent(
+              new CustomEvent('eventflow:edit-endpoint', {
+                detail: { endpointId: nodeData.endpointId },
+              })
+            );
+          }
+        } else if (node.type === 'screen') {
+          window.dispatchEvent(
+            new CustomEvent('eventflow:open-hotspots', {
+              detail: { nodeId: node.id },
+            })
+          );
+        }
+      },
+      [activeBoard.nodes, onSelectNodes, setNodes]
+    );
+
     return (
       <div
         className="w-full h-full relative"
@@ -825,9 +868,9 @@ const CanvasInner: React.FC<{
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onSelectionDragStop={onSelectionDragStop}
-          nodesDraggable={canvasMode === 'edit'}
+          nodesDraggable={canvasMode === 'edit' || selectedNodeIds.length > 0}
           nodesConnectable={canvasMode === 'edit'}
-          elementsSelectable={canvasMode === 'edit'}
+          elementsSelectable={true}
           selectionMode={SelectionMode.Partial}
           selectionOnDrag={canvasMode === 'edit'}
           panOnDrag={canvasMode === 'move' ? true : [1, 2]}
@@ -843,10 +886,19 @@ const CanvasInner: React.FC<{
           selectionKeyCode={['Shift', 'Meta', 'Control']}
           multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
           deleteKeyCode={['Backspace', 'Delete']}
+          onNodeDoubleClick={handleNodeDoubleClick}
           onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
             const ids = selNodes.map((n) => n.id);
             if (ids.length !== selectedNodeIds.length || !ids.every((id) => selectedNodeIds.includes(id))) {
               onSelectNodes(ids);
+              if (canvasMode === 'move') {
+                setNodes((nds) =>
+                  nds.map((n) => ({
+                    ...n,
+                    draggable: ids.includes(n.id),
+                  }))
+                );
+              }
             }
             if (selNodes.length > 0) {
               onSelectEdge(null);
@@ -867,6 +919,15 @@ const CanvasInner: React.FC<{
             setGuideLines({ vertical: null, horizontal: null });
             onSelectNodes([]);
             onSelectEdge(null);
+            if (canvasMode === 'move') {
+              setNodes((nds) =>
+                nds.map((n) => ({
+                  ...n,
+                  selected: false,
+                  draggable: false,
+                }))
+              );
+            }
           }}
           onNodeContextMenu={(event, node) => {
             event.preventDefault();

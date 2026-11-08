@@ -1031,25 +1031,21 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
       return rfNodes.map((newNode) => {
         const prev = prevMap.get(newNode.id);
-        if (!prev) {
-          return {
-            ...newNode,
-            selected: true,
-          };
-        }
+        const isSelected = prev ? (prev.selected ?? false) : true;
         return {
           ...newNode,
-          selected: prev.selected ?? false,
-          measured: prev.measured,
+          selected: isSelected,
+          draggable: canvasMode === 'edit' ? true : isSelected,
+          measured: prev?.measured,
           style: {
             ...newNode.style,
-            width: newNode.style?.width ?? prev.style?.width,
-            height: newNode.style?.height ?? prev.style?.height,
+            width: newNode.style?.width ?? prev?.style?.width,
+            height: newNode.style?.height ?? prev?.style?.height,
           },
         };
       });
     });
-  }, [rfNodes, setNodes]);
+  }, [rfNodes, setNodes, canvasMode]);
 
   useEffect(() => {
     setEdges(rfEdges);
@@ -1378,6 +1374,25 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
       window.removeEventListener('eventflow:delete-edge' as any, onEdgeDeleteEvent);
   }, [handleDeleteEdge]);
 
+  // Double click node in any mode (including Bewegen-Modus) to edit and enable moving it
+  const handleNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      setSelectedNodeIds([node.id]);
+      setNodes((nds) =>
+        nds.map((n) => ({
+          ...n,
+          selected: n.id === node.id,
+          draggable: true,
+        }))
+      );
+      const nodeData = board.nodes.find((n) => n.id === node.id);
+      if (nodeData && nodeData.kind === 'model') {
+        onEditModel(nodeData.modelId);
+      }
+    },
+    [board.nodes, onEditModel, setNodes]
+  );
+
   // Align selection
   const handleAlign = useCallback(
     (mode: AlignmentMode) => {
@@ -1603,9 +1618,9 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onSelectionDragStop={onSelectionDragStop}
-        nodesDraggable={canvasMode === 'edit'}
+        nodesDraggable={canvasMode === 'edit' || selectedNodeIds.length > 0}
         nodesConnectable={canvasMode === 'edit'}
-        elementsSelectable={canvasMode === 'edit'}
+        elementsSelectable={true}
         selectionMode={SelectionMode.Partial}
         selectionOnDrag={canvasMode === 'edit'}
         panOnDrag={canvasMode === 'move' ? true : [1, 2]}
@@ -1621,6 +1636,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         selectionKeyCode={['Shift', 'Meta', 'Control']}
         multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
         deleteKeyCode={['Backspace', 'Delete']}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onSelectionChange={({ nodes: selNodes, edges: selEdges }) => {
           const ids = selNodes.map((n) => n.id);
           if (
@@ -1628,6 +1644,14 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
             !ids.every((id) => selectedNodeIds.includes(id))
           ) {
             setSelectedNodeIds(ids);
+            if (canvasMode === 'move') {
+              setNodes((nds) =>
+                nds.map((n) => ({
+                  ...n,
+                  draggable: ids.includes(n.id),
+                }))
+              );
+            }
           }
           if (selNodes.length > 0) {
             setSelectedEdgeId(null);
@@ -1641,6 +1665,15 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           setGuideLines({ vertical: null, horizontal: null });
           setSelectedNodeIds([]);
           setSelectedEdgeId(null);
+          if (canvasMode === 'move') {
+            setNodes((nds) =>
+              nds.map((n) => ({
+                ...n,
+                selected: false,
+                draggable: false,
+              }))
+            );
+          }
         }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
