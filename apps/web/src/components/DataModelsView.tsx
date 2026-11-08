@@ -20,6 +20,12 @@ import {
 } from '@xyflow/react';
 import { useStore, useEditorStore } from '../storeContext';
 import {
+  copyNodes,
+  hasClipboardNodes,
+  pasteClipboardNodes,
+  duplicateNodes,
+} from '../clipboard';
+import {
   createModel,
   createModelBoard,
   createSectionNode,
@@ -943,10 +949,12 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
       ) {
         return;
       }
-      if (e.key === 'v' || e.key === 'V') {
-        handleSetCanvasMode('edit');
-      } else if (e.key === 'h' || e.key === 'H') {
-        handleSetCanvasMode('move');
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 'v' || e.key === 'V') {
+          handleSetCanvasMode('edit');
+        } else if (e.key === 'h' || e.key === 'H') {
+          handleSetCanvasMode('move');
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1416,6 +1424,194 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
     [selectedNodeIds, board.nodes, store, boardId, onShowToast]
   );
 
+  // Copy node handler (supports single or multiple elements)
+  const handleCopyNodes = useCallback(
+    (nodeId?: string) => {
+      let idsToCopy: string[] = [];
+      if (nodeId) {
+        if (selectedNodeIds.includes(nodeId) && selectedNodeIds.length > 1) {
+          idsToCopy = selectedNodeIds;
+        } else {
+          idsToCopy = [nodeId];
+        }
+      } else {
+        idsToCopy = selectedNodeIds;
+      }
+
+      if (idsToCopy.length === 0) return;
+
+      const nodes = board.nodes.filter((n) => idsToCopy.includes(n.id));
+      if (nodes.length > 0) {
+        copyNodes(nodes, project, boardId);
+        onShowToast?.(
+          nodes.length === 1
+            ? `📋 ${nodes[0].kind === 'model' ? 'Modell' : nodes[0].kind} kopiert!`
+            : `📋 ${nodes.length} Elemente kopiert!`
+        );
+      }
+    },
+    [selectedNodeIds, board.nodes, project, boardId, onShowToast]
+  );
+
+  // Duplicate node handler
+  const handleDuplicateNodes = useCallback(
+    (nodeId?: string) => {
+      let idsToDup: string[] = [];
+      if (nodeId) {
+        if (selectedNodeIds.includes(nodeId) && selectedNodeIds.length > 1) {
+          idsToDup = selectedNodeIds;
+        } else {
+          idsToDup = [nodeId];
+        }
+      } else {
+        idsToDup = selectedNodeIds;
+      }
+
+      if (idsToDup.length === 0) return;
+
+      const newIds = duplicateNodes({
+        store,
+        boardId,
+        nodeIds: idsToDup,
+        isModelView: true,
+      });
+
+      if (newIds.length > 0) {
+        setSelectedNodeIds(newIds);
+        onShowToast?.(
+          newIds.length === 1
+            ? '✨ Element dupliziert!'
+            : `✨ ${newIds.length} Elemente dupliziert!`
+        );
+      }
+    },
+    [selectedNodeIds, store, boardId, onShowToast]
+  );
+
+  // Paste handler
+  const handlePasteNodes = useCallback(
+    (flowPos?: { x: number; y: number }) => {
+      if (hasClipboardNodes()) {
+        const newIds = pasteClipboardNodes({
+          store,
+          targetBoardId: boardId,
+          isModelView: true,
+          targetPosition: flowPos,
+        });
+        if (newIds.length > 0) {
+          setSelectedNodeIds(newIds);
+          onShowToast?.(
+            newIds.length === 1
+              ? '📋 Element eingefügt!'
+              : `📋 ${newIds.length} Elemente eingefügt!`
+          );
+          return;
+        }
+      }
+      onShowToast?.('ℹ️ Zwischenablage ist leer. Kopiere ein Element mit Strg+C!');
+    },
+    [store, boardId, onShowToast]
+  );
+
+  // Delete node handler
+  const handleDeleteNodes = useCallback(
+    (nodeIds?: string[] | string) => {
+      let idsToDelete: string[] = [];
+      if (Array.isArray(nodeIds)) {
+        idsToDelete = nodeIds;
+      } else if (typeof nodeIds === 'string') {
+        if (selectedNodeIds.includes(nodeIds) && selectedNodeIds.length > 1) {
+          idsToDelete = selectedNodeIds;
+        } else {
+          idsToDelete = [nodeIds];
+        }
+      } else {
+        idsToDelete = selectedNodeIds;
+      }
+
+      if (idsToDelete.length === 0) return;
+
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (b) {
+          b.nodes = b.nodes.filter((n) => !idsToDelete.includes(n.id));
+          b.edges = b.edges.filter(
+            (e) => !idsToDelete.includes(e.source) && !idsToDelete.includes(e.target)
+          );
+        }
+      });
+
+      setSelectedNodeIds([]);
+      onShowToast?.(
+        idsToDelete.length === 1
+          ? '🗑️ Element entfernt'
+          : `🗑️ ${idsToDelete.length} Elemente entfernt`
+      );
+    },
+    [selectedNodeIds, store, boardId, onShowToast]
+  );
+
+  // Global keyboard shortcuts (Undo, Redo, Copy, Paste, Duplicate, Delete)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          store.redo();
+        } else {
+          store.undo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        store.redo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          handleCopyNodes();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        handlePasteNodes();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          handleDuplicateNodes();
+        }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          handleDeleteNodes();
+        } else if (selectedEdgeId) {
+          e.preventDefault();
+          handleDeleteEdge(selectedEdgeId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [
+    store,
+    selectedNodeIds,
+    selectedEdgeId,
+    handleCopyNodes,
+    handlePasteNodes,
+    handleDuplicateNodes,
+    handleDeleteNodes,
+    handleDeleteEdge,
+  ]);
+
   return (
     <div
       className="w-full h-full relative"
@@ -1774,60 +1970,19 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           target={contextMenu.target}
           onClose={() => setContextMenu(null)}
           onCopy={() => {
+            handleCopyNodes(contextMenu.target.nodeId);
             setContextMenu(null);
           }}
           onPaste={(flowPos) => {
-            handleCreateNewModelAt(flowPos);
+            handlePasteNodes(flowPos);
             setContextMenu(null);
           }}
           onDuplicate={(nodeId) => {
-            const idToDupe = nodeId || selectedNodeIds[0];
-            const targetNode = board.nodes.find((n) => n.id === idToDupe);
-            if (targetNode && targetNode.kind === 'model') {
-              const origModel = project.models.find(
-                (m) => m.id === targetNode.modelId
-              );
-              if (origModel) {
-                const newModel = createModel(
-                  `${origModel.name}Kopie`,
-                  JSON.parse(JSON.stringify(origModel.fields))
-                );
-                const newNodeId = uid('n_');
-                store.update((draft) => {
-                  draft.models.push(newModel);
-                  const b = draft.boards.find((item) => item.id === boardId);
-                  if (b) {
-                    b.nodes.push({
-                      id: newNodeId,
-                      kind: 'model',
-                      modelId: newModel.id,
-                      position: {
-                        x: targetNode.position.x + 40,
-                        y: targetNode.position.y + 40,
-                      },
-                    });
-                  }
-                });
-                setSelectedNodeIds([newNodeId]);
-                onShowToast?.(`✨ Model "${newModel.name}" dupliziert!`);
-              }
-            }
+            handleDuplicateNodes(nodeId);
             setContextMenu(null);
           }}
           onDelete={(nodeId) => {
-            const idsToDelete = nodeId ? [nodeId] : selectedNodeIds;
-            store.update((draft) => {
-              const b = draft.boards.find((item) => item.id === boardId);
-              if (b) {
-                b.nodes = b.nodes.filter((n) => !idsToDelete.includes(n.id));
-                b.edges = b.edges.filter(
-                  (e) =>
-                    !idsToDelete.includes(e.source) && !idsToDelete.includes(e.target)
-                );
-              }
-            });
-            setSelectedNodeIds([]);
-            onShowToast?.('🗑️ Element vom Canvas entfernt');
+            handleDeleteNodes(nodeId);
             setContextMenu(null);
           }}
           onDeleteEdge={(edgeId) => {
@@ -1858,7 +2013,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
             setContextMenu(null);
           }}
           onAlign={handleAlign}
-          hasClipboardContent={false}
+          hasClipboardContent={hasClipboardNodes()}
           onOpenPlantUmlExport={onOpenPlantUmlExport}
           onOpenPlantUmlImport={onOpenPlantUmlImport}
           onOpenJavaModal={onOpenJavaModal}

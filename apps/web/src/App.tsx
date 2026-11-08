@@ -33,8 +33,16 @@ import { ModelNode } from './nodes/ModelNode';
 import { UserActionNode } from './nodes/UserActionNode';
 import { NoteNode } from './nodes/NoteNode';
 import { FlowRefNode } from './nodes/FlowRefNode';
+import { SectionNode } from './nodes/SectionNode';
+import { ShapeNode } from './nodes/ShapeNode';
 import { StepWithDeleteEdge } from './edges/StepWithDeleteEdge';
 import { ContextMenu, type ContextMenuTarget } from './components/ContextMenu';
+import {
+  copyNodes,
+  hasClipboardNodes,
+  pasteClipboardNodes,
+  duplicateNodes,
+} from './clipboard';
 import {
   connect as domainConnect,
   removeNodes,
@@ -79,6 +87,8 @@ const nodeTypes = {
   userAction: UserActionNode,
   note: NoteNode,
   flowRef: FlowRefNode,
+  section: SectionNode,
+  shape: ShapeNode,
 };
 
 const edgeTypes = {
@@ -144,10 +154,12 @@ const CanvasInner: React.FC<{
       ) {
         return;
       }
-      if (e.key === 'v' || e.key === 'V') {
-        handleSetCanvasMode('edit');
-      } else if (e.key === 'h' || e.key === 'H') {
-        handleSetCanvasMode('move');
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 'v' || e.key === 'V') {
+          handleSetCanvasMode('edit');
+        } else if (e.key === 'h' || e.key === 'H') {
+          handleSetCanvasMode('move');
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1148,9 +1160,6 @@ const AppContent: React.FC = () => {
     target: ContextMenuTarget;
   } | null>(null);
 
-  // In-app copied nodes buffer (supports multiple elements)
-  const [copiedNodes, setCopiedNodes] = useState<FlowNode[]>([]);
-
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -1207,28 +1216,49 @@ const AppContent: React.FC = () => {
     [store, showToast]
   );
 
-  // Direct paste from clipboard via navigator.clipboard or fallback
-  const handlePasteFromClipboard = useCallback(async (targetPos?: { x: number; y: number }) => {
-    try {
-      if (navigator.clipboard?.read) {
-        const clipboardItems = await navigator.clipboard.read();
-        for (const item of clipboardItems) {
-          for (const type of item.types) {
-            if (type.startsWith('image/')) {
-              const blob = await item.getType(type);
-              insertScreenFromBlob(blob, 'Figma Screen', targetPos);
-              return;
+  // Universal paste handler (nodes from clipboard or images from system)
+  const handlePaste = useCallback(
+    async (targetPos?: { x: number; y: number }) => {
+      if (hasClipboardNodes()) {
+        const newIds = pasteClipboardNodes({
+          store,
+          targetBoardId: activeBoardId,
+          isModelView: false,
+          targetPosition: targetPos,
+        });
+        if (newIds.length > 0) {
+          setSelectedNodeIds(newIds);
+          showToast(
+            newIds.length === 1
+              ? '📋 Element eingefügt!'
+              : `📋 ${newIds.length} Elemente eingefügt!`
+          );
+          return;
+        }
+      }
+
+      // Fallback: check system clipboard for images
+      try {
+        if (navigator.clipboard?.read) {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const item of clipboardItems) {
+            for (const type of item.types) {
+              if (type.startsWith('image/')) {
+                const blob = await item.getType(type);
+                insertScreenFromBlob(blob, 'Figma Screen', targetPos);
+                return;
+              }
             }
           }
         }
-      }
-      showToast('ℹ️ Kein Bild in der Zwischenablage. Kopiere in Figma mit Shift+Strg+C (Copy as PNG)!');
-    } catch (err) {
-      showToast('⚠️ Zugriff auf Zwischenablage nicht gestattet. Nutze Strg+V direkt auf der Tastatur.');
-    }
-  }, [insertScreenFromBlob, showToast]);
+      } catch (_) {}
 
-  // Robust global Paste listener (Catches Ctrl+V from anywhere in the window)
+      showToast('ℹ️ Zwischenablage ist leer. Kopiere ein Element mit Strg+C!');
+    },
+    [store, activeBoardId, insertScreenFromBlob, showToast]
+  );
+
+  // Robust global Paste listener (Catches native paste events from browser)
   useEffect(() => {
     const onWindowPaste = (e: ClipboardEvent) => {
       // Don't intercept if user is typing text into an input or textarea
@@ -1237,44 +1267,9 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      // Check for copied nodes in buffer first
-      if (copiedNodes.length > 0) {
-        const newSelectedIds: string[] = [];
-        store.update((draft) => {
-          const board = draft.boards.find((b) => b.id === activeBoardId);
-          if (!board) return;
-
-          for (const node of copiedNodes) {
-            const newNodeId = uid('n_');
-            newSelectedIds.push(newNodeId);
-
-            const cloned: FlowNode = {
-              ...JSON.parse(JSON.stringify(node)),
-              id: newNodeId,
-              position: {
-                x: node.position.x + 40,
-                y: node.position.y + 40,
-              },
-            };
-
-            if (cloned.kind === 'screen') {
-              cloned.hotspots = cloned.hotspots.map((h) => ({
-                ...h,
-                id: uid('h_'),
-                triggers: h.triggers.map((t) => ({ ...t, id: uid('t_') })),
-              }));
-            }
-
-            board.nodes.push(cloned);
-          }
-        });
-
-        setSelectedNodeIds(newSelectedIds);
-        showToast(
-          newSelectedIds.length === 1
-            ? '📋 Element eingefügt!'
-            : `📋 ${newSelectedIds.length} Elemente eingefügt!`
-        );
+      if (hasClipboardNodes()) {
+        e.preventDefault();
+        handlePaste();
         return;
       }
 
@@ -1309,7 +1304,7 @@ const AppContent: React.FC = () => {
 
     window.addEventListener('paste', onWindowPaste, true);
     return () => window.removeEventListener('paste', onWindowPaste, true);
-  }, [insertScreenFromBlob, copiedNodes, activeBoardId, store, showToast]);
+  }, [handlePaste, insertScreenFromBlob]);
 
   // Copy node handler (supports multiple elements)
   const handleCopyNodes = useCallback((nodeId?: string) => {
@@ -1331,14 +1326,14 @@ const AppContent: React.FC = () => {
 
     const nodes = board.nodes.filter((n) => idsToCopy.includes(n.id));
     if (nodes.length > 0) {
-      setCopiedNodes(JSON.parse(JSON.stringify(nodes)));
+      copyNodes(nodes, store.getState().project, activeBoardId);
       showToast(
         nodes.length === 1
           ? `📋 ${nodes[0].kind.toUpperCase()} kopiert!`
           : `📋 ${nodes.length} Elemente kopiert!`
       );
     }
-  }, [selectedNodeIds, store, showToast]);
+  }, [selectedNodeIds, store, activeBoardId, showToast]);
 
   // Duplicate node handler (supports multiple elements)
   const handleDuplicateNodes = useCallback((nodeId?: string) => {
@@ -1355,38 +1350,11 @@ const AppContent: React.FC = () => {
 
     if (idsToDup.length === 0) return;
 
-    const newSelectedIds: string[] = [];
-    store.update((draft) => {
-      const board = draft.boards.find((b) => b.id === activeBoardId);
-      if (!board) return;
-
-      for (const id of idsToDup) {
-        const original = board.nodes.find((n) => n.id === id);
-        if (!original) continue;
-
-        const newNodeId = uid('n_');
-        newSelectedIds.push(newNodeId);
-
-        const cloned: FlowNode = {
-          ...JSON.parse(JSON.stringify(original)),
-          id: newNodeId,
-          position: {
-            x: original.position.x + 40,
-            y: original.position.y + 40,
-          },
-        };
-
-        if (cloned.kind === 'screen') {
-          cloned.title = `${cloned.title} (Kopie)`;
-          cloned.hotspots = cloned.hotspots.map((h) => ({
-            ...h,
-            id: uid('h_'),
-            triggers: h.triggers.map((t) => ({ ...t, id: uid('t_') })),
-          }));
-        }
-
-        board.nodes.push(cloned);
-      }
+    const newSelectedIds = duplicateNodes({
+      store,
+      boardId: activeBoardId,
+      nodeIds: idsToDup,
+      isModelView: false,
     });
 
     if (newSelectedIds.length > 0) {
@@ -1457,55 +1425,12 @@ const AppContent: React.FC = () => {
   }, [handleDeleteEdge]);
 
   // Paste handler for context menu
-  const handleContextMenuPaste = useCallback((flowPos: { x: number; y: number }) => {
-    if (copiedNodes.length > 0) {
-      const minX = Math.min(...copiedNodes.map((n) => n.position.x));
-      const minY = Math.min(...copiedNodes.map((n) => n.position.y));
-      const newSelectedIds: string[] = [];
-
-      store.update((draft) => {
-        const board = draft.boards.find((b) => b.id === activeBoardId);
-        if (!board) return;
-
-        for (const node of copiedNodes) {
-          const newNodeId = uid('n_');
-          newSelectedIds.push(newNodeId);
-
-          const offsetX = node.position.x - minX;
-          const offsetY = node.position.y - minY;
-
-          const cloned: FlowNode = {
-            ...JSON.parse(JSON.stringify(node)),
-            id: newNodeId,
-            position: {
-              x: Math.round(flowPos.x + offsetX),
-              y: Math.round(flowPos.y + offsetY),
-            },
-          };
-
-          if (cloned.kind === 'screen') {
-            cloned.hotspots = cloned.hotspots.map((h) => ({
-              ...h,
-              id: uid('h_'),
-              triggers: h.triggers.map((t) => ({ ...t, id: uid('t_') })),
-            }));
-          }
-
-          board.nodes.push(cloned);
-        }
-      });
-
-      setSelectedNodeIds(newSelectedIds);
-      showToast(
-        newSelectedIds.length === 1
-          ? '📋 Element an Mausposition eingefügt!'
-          : `📋 ${newSelectedIds.length} Elemente eingefügt!`
-      );
-    } else {
-      // Fallback: paste image from system clipboard at position
-      handlePasteFromClipboard(flowPos);
-    }
-  }, [copiedNodes, activeBoardId, store, handlePasteFromClipboard, showToast]);
+  const handleContextMenuPaste = useCallback(
+    (flowPos: { x: number; y: number }) => {
+      handlePaste(flowPos);
+    },
+    [handlePaste]
+  );
 
   // Node edit handler for context menu
   const handleContextMenuEdit = useCallback((nodeId: string) => {
@@ -1688,6 +1613,9 @@ const AppContent: React.FC = () => {
           e.preventDefault();
           handleCopyNodes();
         }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        handlePaste();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         if (selectedNodeIds.length > 0) {
           e.preventDefault();
@@ -1706,7 +1634,16 @@ const AppContent: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [store, selectedNodeIds, selectedEdgeId, handleCopyNodes, handleDuplicateNodes, handleDeleteNodes, handleDeleteEdge]);
+  }, [
+    store,
+    selectedNodeIds,
+    selectedEdgeId,
+    handleCopyNodes,
+    handlePaste,
+    handleDuplicateNodes,
+    handleDeleteNodes,
+    handleDeleteEdge,
+  ]);
 
   return (
     <div
@@ -1726,7 +1663,7 @@ const AppContent: React.FC = () => {
         onOpenAiModal={handleOpenAiModal}
         onEditModel={(id) => setEditingModelId(id)}
         onEditEndpoint={(id) => setEditingEndpointId(id)}
-        onPasteFromClipboard={() => handlePasteFromClipboard()}
+        onPasteFromClipboard={() => handlePaste()}
       />
 
       {/* Main Workspace Area */}
@@ -1776,7 +1713,7 @@ const AppContent: React.FC = () => {
                 onCreateUserAction={handleCreateUserAction}
                 onCreateNote={handleCreateNote}
                 onAlign={handleAlignSelection}
-                hasClipboardContent={copiedNodes.length > 0}
+                hasClipboardContent={hasClipboardNodes()}
                 onOpenPlantUmlExport={() => handleOpenPlantUml('export')}
                 onOpenPlantUmlImport={() => handleOpenPlantUml('import')}
                 onOpenJavaModal={(tab, modelId) => handleOpenJavaModal(tab, modelId ?? null)}
