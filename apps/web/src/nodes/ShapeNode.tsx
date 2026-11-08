@@ -1,9 +1,9 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { useEditorStore } from '../storeContext';
 import type { ShapeNode as ShapeNodeType } from '@eventflow/core';
-import { Trash2 } from 'lucide-react';
+import { Trash2, GripVertical, Edit3 } from 'lucide-react';
 
 interface Props {
   id: string;
@@ -24,6 +24,7 @@ const SHAPE_PALETTE = [
 export const ShapeNode = memo(({ id, data, selected }: Props) => {
   const store = useEditorStore();
   const shapeType = data.shapeType || 'rectangle';
+  const [isEditing, setIsEditing] = useState(false);
 
   const handleResizeEnd = (_: unknown, params: { x: number; y: number; width: number; height: number }) => {
     store.update((draft) => {
@@ -70,7 +71,7 @@ export const ShapeNode = memo(({ id, data, selected }: Props) => {
     <div
       className={`relative w-full h-full flex flex-col items-center justify-center transition-colors group ${
         isText
-          ? 'bg-transparent'
+          ? 'bg-transparent hover:outline hover:outline-1 hover:outline-dashed hover:outline-orange-300 dark:hover:outline-orange-600 rounded-md'
           : isCircle
           ? 'rounded-full shadow-sm'
           : 'rounded-xl shadow-sm'
@@ -85,37 +86,75 @@ export const ShapeNode = memo(({ id, data, selected }: Props) => {
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={isText ? 100 : 80}
-        minHeight={isText ? 40 : 80}
+        minWidth={isText ? 80 : 80}
+        minHeight={isText ? 32 : 80}
         color="#f97316"
         onResizeEnd={handleResizeEnd}
       />
 
+      {/* Explicit Drag Handle Pill for Text Nodes */}
+      {isText && (
+        <div
+          className={`absolute -top-4 left-0 flex items-center gap-1 px-1.5 py-0.5 bg-white/95 dark:bg-slate-800/95 border border-slate-300 dark:border-slate-600 rounded-md shadow-xs text-[10px] text-slate-500 dark:text-slate-400 cursor-grab active:cursor-grabbing transition-opacity ${
+            selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+          title="Hier anfassen zum Verschieben"
+        >
+          <GripVertical className="w-3 h-3 text-orange-500" />
+          <span className="font-semibold select-none">Verschieben</span>
+        </div>
+      )}
+
       {/* Floating Toolbar when Selected */}
       {selected && (
-        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg px-2 py-1 rounded-lg flex items-center gap-1.5 z-30 nodrag nopan">
-          <div className="flex items-center gap-1">
-            {SHAPE_PALETTE.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => handleColorChange(p.fill)}
-                className={`w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-600 transition-transform hover:scale-125 ${
-                  data.color === p.fill ? 'ring-2 ring-orange-500 scale-110' : ''
-                }`}
-                style={{ backgroundColor: p.fill === 'transparent' ? '#ffffff' : p.fill }}
-                title={p.label}
-              />
-            ))}
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg px-2 py-1 rounded-lg flex items-center gap-1.5 z-30">
+          {/* Drag Handle in Toolbar */}
+          <div
+            className="flex items-center gap-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 px-1 py-0.5 rounded cursor-grab active:cursor-grabbing"
+            title="Anfassen zum Verschieben"
+          >
+            <GripVertical className="w-3.5 h-3.5 text-orange-500" />
           </div>
 
-          <div className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+          <div className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5 nodrag nopan" />
+
+          {/* Edit text toggle button */}
+          <button
+            type="button"
+            onClick={() => setIsEditing(true)}
+            className="p-1 text-slate-400 hover:text-orange-500 rounded transition-colors nodrag nopan"
+            title="Text bearbeiten (Doppelklick)"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+
+          {!isText && (
+            <>
+              <div className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5 nodrag nopan" />
+              <div className="flex items-center gap-1 nodrag nopan">
+                {SHAPE_PALETTE.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => handleColorChange(p.fill)}
+                    className={`w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-600 transition-transform hover:scale-125 ${
+                      data.color === p.fill ? 'ring-2 ring-orange-500 scale-110' : ''
+                    }`}
+                    style={{ backgroundColor: p.fill === 'transparent' ? '#ffffff' : p.fill }}
+                    title={p.label}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5 nodrag nopan" />
 
           <button
             type="button"
             onClick={handleDelete}
-            className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-            title="Form löschen"
+            className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors nodrag nopan"
+            title="Löschen"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -132,19 +171,52 @@ export const ShapeNode = memo(({ id, data, selected }: Props) => {
         </>
       )}
 
-      {/* Textarea inside shape / text node */}
-      <textarea
-        value={data.label || ''}
-        onChange={handleTextChange}
-        placeholder={isText ? 'Text eingeben...' : 'Beschriftung...'}
-        className={`nodrag nopan w-full h-full bg-transparent resize-none outline-none font-medium text-center flex items-center justify-center p-2 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:italic ${
-          isText ? 'font-bold' : ''
-        }`}
-        style={{
-          fontSize: data.fontSize || (isText ? 18 : 14),
-          lineHeight: '1.3',
-        }}
-      />
+      {/* Text display / editing */}
+      {!isEditing ? (
+        <div
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setIsEditing(true);
+          }}
+          className={`w-full h-full flex items-center justify-center p-2 text-center select-none cursor-move break-words ${
+            isText ? 'font-bold' : 'font-medium'
+          } ${
+            !data.label
+              ? 'text-slate-400 italic'
+              : 'text-slate-800 dark:text-slate-100'
+          }`}
+          style={{
+            fontSize: data.fontSize || (isText ? 18 : 14),
+            lineHeight: '1.3',
+            userSelect: 'none',
+          }}
+          title="Doppelklick zum Bearbeiten, Ziehen zum Verschieben"
+        >
+          <span className="whitespace-pre-wrap max-w-full pointer-events-none">
+            {data.label || (isText ? 'Text eingeben...' : 'Beschriftung...')}
+          </span>
+        </div>
+      ) : (
+        <textarea
+          autoFocus
+          value={data.label || ''}
+          onChange={handleTextChange}
+          onBlur={() => setIsEditing(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
+              setIsEditing(false);
+            }
+          }}
+          placeholder={isText ? 'Text eingeben...' : 'Beschriftung...'}
+          className={`nodrag nopan w-full h-full bg-transparent resize-none outline-none font-medium text-center flex items-center justify-center p-2 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:italic ${
+            isText ? 'font-bold' : ''
+          }`}
+          style={{
+            fontSize: data.fontSize || (isText ? 18 : 14),
+            lineHeight: '1.3',
+          }}
+        />
+      )}
     </div>
   );
 });

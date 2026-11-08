@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { useEditorStore } from '../storeContext';
 import type { NoteNode as NoteNodeType } from '@eventflow/core';
-import { FileText } from 'lucide-react';
+import { FileText, GripVertical } from 'lucide-react';
 
 interface Props {
   id: string;
@@ -53,9 +53,15 @@ export const NoteNode = memo(({ id, data, selected }: Props) => {
       <Handle type="target" position={Position.Left} className="!bg-amber-400 dark:!bg-slate-400 !w-2.5 !h-2.5" />
       <Handle type="target" position={Position.Top} className="!bg-amber-400 dark:!bg-slate-400 !w-2.5 !h-2.5" />
 
-      <div className="flex items-center gap-1.5 pb-1 border-b border-amber-200/60 dark:border-slate-700 text-amber-700 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider shrink-0">
-        <FileText className="w-3.5 h-3.5" />
-        <span>Notiz</span>
+      <div
+        className="flex items-center justify-between pb-1 border-b border-amber-200/60 dark:border-slate-700 text-amber-700 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider shrink-0 cursor-grab active:cursor-grabbing select-none"
+        title="Anfassen zum Verschieben"
+      >
+        <div className="flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5" />
+          <span>Notiz</span>
+        </div>
+        <GripVertical className="w-3 h-3 opacity-60" />
       </div>
 
       <textarea
