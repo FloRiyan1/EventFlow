@@ -57,6 +57,9 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
   const [newFieldRaw, setNewFieldRaw] = useState('');
   const newFieldInputRef = useRef<HTMLInputElement>(null);
 
+  // Field Reordering and Sorting menu
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
   const handleResizeEnd = (_: unknown, params: { x: number; y: number; width: number; height: number }) => {
     store.update((draft) => {
       const b = draft.boards.find((item) => item.id === store.getState().activeBoardId);
@@ -190,7 +193,6 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
   };
 
   // Field Reordering and Sorting
-  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
   const handleMoveField = (index: number, delta: number, e: React.MouseEvent) => {
     e.stopPropagation();

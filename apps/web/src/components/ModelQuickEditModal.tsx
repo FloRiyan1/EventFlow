@@ -60,6 +60,8 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
     return getInheritedFields(project, { ...model, extendsModelId });
   }, [project, model, extendsModelId]);
 
+  const parsedDecl = useMemo(() => parseModelDeclaration(name), [name]);
+
   if (!modelId || !model) return null;
 
   const parsedFields = fieldsFromText(text, model.fields);
@@ -82,8 +84,6 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
   const allReferenced = [
     ...new Set(parsedFields.flatMap((f) => referencedTypeNames(f.type))),
   ];
-
-  const parsedDecl = useMemo(() => parseModelDeclaration(name), [name]);
 
   const handleSave = () => {
     store.update((draft) => {
