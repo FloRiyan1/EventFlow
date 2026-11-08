@@ -67,6 +67,8 @@ import {
   Magnet,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  Mouse,
+  Laptop,
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from './themeContext';
 
@@ -121,6 +123,25 @@ const CanvasInner: React.FC<{
     vertical: AlignmentGuideLine | null;
     horizontal: AlignmentGuideLine | null;
   }>({ vertical: null, horizontal: null });
+
+  // Navigation mode: 'mouse' (wheel zooms) vs 'trackpad' (2-finger scroll pans)
+  const [navMode, setNavMode] = useState<'mouse' | 'trackpad'>(() => {
+    const saved = localStorage.getItem('eventflow_nav_mode');
+    return saved === 'trackpad' || saved === 'mouse' ? saved : 'mouse';
+  });
+
+  const handleToggleNavMode = () => {
+    setNavMode((prev) => {
+      const next = prev === 'mouse' ? 'trackpad' : 'mouse';
+      localStorage.setItem('eventflow_nav_mode', next);
+      onShowToast(
+        next === 'mouse'
+          ? '🖱️ Maus-Modus: Mausrad zoomt die Ansicht'
+          : '🍏 Trackpad-Modus: 2-Finger scrollt/schwenkt'
+      );
+      return next;
+    });
+  };
 
   const activeBoard = useMemo(() => {
     return project.boards.find((b) => b.id === activeBoardId) ?? project.boards[0];
@@ -708,6 +729,36 @@ const CanvasInner: React.FC<{
             <span>Snap</span>
           </button>
 
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+          {/* Navigation Mode: Mouse Wheel Zoom vs Trackpad Pan */}
+          <button
+            type="button"
+            onClick={handleToggleNavMode}
+            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-all ${
+              navMode === 'mouse'
+                ? 'bg-blue-500/15 dark:bg-blue-500/25 text-blue-700 dark:text-blue-300 border border-blue-500/30'
+                : 'bg-emerald-500/15 dark:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+            }`}
+            title={
+              navMode === 'mouse'
+                ? 'Maus-Modus: Mausrad zoomt rein/raus. Klicken für Apple Trackpad.'
+                : 'Trackpad-Modus: 2 Finger bewegen den Canvas. Klicken für Maus-Zoom.'
+            }
+          >
+            {navMode === 'mouse' ? (
+              <>
+                <Mouse className="w-3.5 h-3.5 text-blue-500" />
+                <span>Maus-Zoom</span>
+              </>
+            ) : (
+              <>
+                <Laptop className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Trackpad</span>
+              </>
+            )}
+          </button>
+
           {/* Multi-Selection Tools */}
           {selectedNodeIds.length > 1 && (
             <>
@@ -750,10 +801,10 @@ const CanvasInner: React.FC<{
           selectionMode={SelectionMode.Partial}
           selectionOnDrag={isSelectMode}
           panOnDrag={isSelectMode ? [1, 2] : true}
-          panOnScroll={true}
+          panOnScroll={navMode === 'trackpad'}
           panOnScrollMode={PanOnScrollMode.Free}
           panOnScrollSpeed={1}
-          zoomOnScroll={false}
+          zoomOnScroll={navMode === 'mouse'}
           zoomOnPinch={true}
           zoomActivationKeyCode={['Meta', 'Control']}
           preventScrolling={true}

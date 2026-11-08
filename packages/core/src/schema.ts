@@ -130,6 +130,28 @@ export const FlowRefNodeSchema = z.object({
   label: z.string().default(''),
 });
 
+export const SectionNodeSchema = z.object({
+  ...nodeBase,
+  kind: z.literal('section'),
+  label: z.string().default('Neuer Bereich'),
+  color: z.string().default('#3b82f6'),
+  width: z.number().default(500),
+  height: z.number().default(380),
+});
+
+export const ShapeNodeSchema = z.object({
+  ...nodeBase,
+  kind: z.literal('shape'),
+  shapeType: z.enum(['rectangle', 'circle', 'text']),
+  label: z.string().default(''),
+  color: z.string().default('#f8fafc'),
+  borderColor: z.string().optional(),
+  textColor: z.string().optional(),
+  width: z.number().default(180),
+  height: z.number().default(120),
+  fontSize: z.number().default(14),
+});
+
 export const FlowNodeSchema = z.discriminatedUnion('kind', [
   ScreenNodeSchema,
   UserActionNodeSchema,
@@ -137,6 +159,8 @@ export const FlowNodeSchema = z.discriminatedUnion('kind', [
   ModelNodeSchema,
   NoteNodeSchema,
   FlowRefNodeSchema,
+  SectionNodeSchema,
+  ShapeNodeSchema,
 ]);
 
 export const EdgeKindSchema = z.enum(['trigger', 'navigation', 'request', 'response', 'flow']);
@@ -198,6 +222,8 @@ export type EndpointNode = z.infer<typeof EndpointNodeSchema>;
 export type ModelNode = z.infer<typeof ModelNodeSchema>;
 export type NoteNode = z.infer<typeof NoteNodeSchema>;
 export type FlowRefNode = z.infer<typeof FlowRefNodeSchema>;
+export type SectionNode = z.infer<typeof SectionNodeSchema>;
+export type ShapeNode = z.infer<typeof ShapeNodeSchema>;
 export type FlowNode = z.infer<typeof FlowNodeSchema>;
 export type FlowNodeKind = FlowNode['kind'];
 export type EdgeKind = z.infer<typeof EdgeKindSchema>;

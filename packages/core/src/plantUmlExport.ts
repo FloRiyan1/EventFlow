@@ -107,6 +107,10 @@ export function exportBoardToPlantUml(project: Project, board: Board): string {
         lines.push('end note');
         break;
       }
+
+      case 'section':
+      case 'shape':
+        break;
     }
   }
 

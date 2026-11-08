@@ -20,6 +20,10 @@ import {
   Coffee,
   ChevronRight,
   ChevronDown,
+  LayoutGrid,
+  Square,
+  Circle,
+  Type,
 } from 'lucide-react';
 import type { AlignmentMode } from '@eventflow/core';
 
@@ -57,6 +61,8 @@ interface Props {
   onOpenJavaModal?: (tab?: 'export' | 'import', modelId?: string) => void;
   onOpenAiModal?: () => void;
   onImportModelsToPage?: () => void;
+  onCreateSection?: (flowPos: { x: number; y: number }) => void;
+  onCreateShape?: (type: 'rectangle' | 'circle' | 'text', flowPos: { x: number; y: number }) => void;
 }
 
 export const ContextMenu: React.FC<Props> = ({
@@ -75,6 +81,8 @@ export const ContextMenu: React.FC<Props> = ({
   onCreateModel,
   onCreateUserAction,
   onCreateNote,
+  onCreateSection,
+  onCreateShape,
   onAlign,
   hasClipboardContent,
   onOpenPlantUmlExport,
@@ -320,6 +328,76 @@ export const ContextMenu: React.FC<Props> = ({
               </div>
               <Plus className="w-3.5 h-3.5 text-slate-400" />
             </button>
+          )}
+
+          {onCreateSection && (
+            <button
+              onClick={() => {
+                onCreateSection(target.position);
+                onClose();
+              }}
+              className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-5 h-5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </div>
+                <span>Neuer Bereich (Section)</span>
+              </div>
+              <Plus className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          )}
+
+          {onCreateShape && (
+            <>
+              <button
+                onClick={() => {
+                  onCreateShape('rectangle', target.position);
+                  onClose();
+                }}
+                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-5 h-5 rounded bg-slate-500/15 text-slate-600 dark:text-slate-400 flex items-center justify-center shrink-0">
+                    <Square className="w-3.5 h-3.5" />
+                  </div>
+                  <span>Neuer Kasten</span>
+                </div>
+                <Plus className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              <button
+                onClick={() => {
+                  onCreateShape('circle', target.position);
+                  onClose();
+                }}
+                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-5 h-5 rounded bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <Circle className="w-3.5 h-3.5" />
+                  </div>
+                  <span>Neuer Kreis</span>
+                </div>
+                <Plus className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              <button
+                onClick={() => {
+                  onCreateShape('text', target.position);
+                  onClose();
+                }}
+                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-5 h-5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <Type className="w-3.5 h-3.5" />
+                  </div>
+                  <span>Neuer Text</span>
+                </div>
+                <Plus className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            </>
           )}
         </div>
       )}

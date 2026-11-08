@@ -22,6 +22,8 @@ import { useStore, useEditorStore } from '../storeContext';
 import {
   createModel,
   createModelBoard,
+  createSectionNode,
+  createShapeNode,
   deleteBoard,
   deleteModel,
   modelUsages,
@@ -72,10 +74,19 @@ import {
   AlignVerticalJustifyCenter,
   GripVertical,
   Upload,
+  Mouse,
+  Laptop,
+  LayoutGrid,
+  Square,
+  Circle,
+  Type,
+  FileText,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { ModelNode } from '../nodes/ModelNode';
 import { NoteNode } from '../nodes/NoteNode';
+import { SectionNode } from '../nodes/SectionNode';
+import { ShapeNode } from '../nodes/ShapeNode';
 import { StepWithDeleteEdge } from '../edges/StepWithDeleteEdge';
 import { AlignmentGuideLines } from './AlignmentGuideLines';
 import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
@@ -258,6 +269,8 @@ const erdNodeTypes = {
 const freeCanvasNodeTypes = {
   model: ModelNode,
   note: NoteNode,
+  section: SectionNode,
+  shape: ShapeNode,
 };
 
 const freeCanvasEdgeTypes = {
@@ -910,6 +923,12 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
+  // Navigation mode: 'mouse' (wheel zooms) vs 'trackpad' (2-finger pans, pinch zooms)
+  const [navMode, setNavMode] = useState<'mouse' | 'trackpad'>(() => {
+    const saved = localStorage.getItem('eventflow_nav_mode');
+    return saved === 'trackpad' || saved === 'mouse' ? saved : 'mouse';
+  });
+
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -936,6 +955,7 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         style: {
           width: node.width ?? undefined,
           height: node.height ?? undefined,
+          zIndex: node.kind === 'section' ? -1 : 1,
         },
       };
     });
@@ -1269,6 +1289,45 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
     [store, boardId, onShowToast]
   );
 
+  const handleCreateSectionAt = useCallback(
+    (flowPos?: { x: number; y: number }) => {
+      const pos = flowPos ?? screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+      const newSec = createSectionNode('Neuer Bereich', Math.round(pos.x - 240), Math.round(pos.y - 180));
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (b) {
+          b.nodes.unshift(newSec);
+        }
+      });
+      setSelectedNodeIds([newSec.id]);
+      onShowToast?.('🔲 Neuer Bereich angelegt!');
+    },
+    [store, boardId, screenToFlowPosition, onShowToast]
+  );
+
+  const handleCreateShapeAt = useCallback(
+    (type: 'rectangle' | 'circle' | 'text', flowPos?: { x: number; y: number }) => {
+      const pos = flowPos ?? screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+      const newShp = createShapeNode(type, Math.round(pos.x - 90), Math.round(pos.y - 60));
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === boardId);
+        if (b) {
+          b.nodes.push(newShp);
+        }
+      });
+      setSelectedNodeIds([newShp.id]);
+      const labels = { rectangle: 'Kasten', circle: 'Kreis', text: 'Text' };
+      onShowToast?.(`✨ Neuer ${labels[type]} hinzugefügt!`);
+    },
+    [store, boardId, screenToFlowPosition, onShowToast]
+  );
+
   const handleDeleteEdge = useCallback(
     (edgeId: string) => {
       store.update((draft) => {
@@ -1393,6 +1452,92 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           <span>Anordnen</span>
         </button>
 
+        {/* Navigation Mode: Maus (Wheel Zoom) vs Trackpad (2-Finger Pan) */}
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+        <button
+          type="button"
+          onClick={() => {
+            const next = navMode === 'mouse' ? 'trackpad' : 'mouse';
+            setNavMode(next);
+            localStorage.setItem('eventflow_nav_mode', next);
+            onShowToast?.(
+              next === 'mouse'
+                ? '🖱️ Maus-Modus aktiviert: Mausrad zoomt'
+                : '🍏 Trackpad-Modus aktiviert: 2 Finger bewegen, Pinchen zoomt'
+            );
+          }}
+          className={`px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium transition-all ${
+            navMode === 'mouse'
+              ? 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-300 dark:border-orange-800'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+          title={
+            navMode === 'mouse'
+              ? 'Maus-Modus: Scrollen mit dem Mausrad zoomt das Canvas. Klicken für Trackpad-Modus.'
+              : 'Trackpad-Modus: 2 Finger bewegen das Canvas, Pinchen zoomt. Klicken für Maus-Modus.'
+          }
+        >
+          {navMode === 'mouse' ? (
+            <>
+              <Mouse className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+              <span>Maus-Zoom</span>
+            </>
+          ) : (
+            <>
+              <Laptop className="w-3.5 h-3.5 text-slate-500" />
+              <span>Trackpad</span>
+            </>
+          )}
+        </button>
+
+        {/* Freie Formen & Bereiche (Figma / Mural Style) */}
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+        <button
+          type="button"
+          onClick={() => handleCreateSectionAt()}
+          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+          title="Neuen Bereich (Section / Zone) für Modelle aufziehen"
+        >
+          <LayoutGrid className="w-3.5 h-3.5 text-blue-500" />
+          <span>Bereich</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleCreateShapeAt('rectangle')}
+          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title="Kasten / Rechteck hinzufügen"
+        >
+          <Square className="w-3.5 h-3.5 text-slate-500" />
+          <span>Kasten</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleCreateShapeAt('circle')}
+          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title="Kreis hinzufügen"
+        >
+          <Circle className="w-3.5 h-3.5 text-sky-500" />
+          <span>Kreis</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleCreateShapeAt('text')}
+          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title="Freien Text hinzufügen"
+        >
+          <Type className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Text</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleCreateNoteAt()}
+          className="px-2 py-1.5 rounded-lg flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors"
+          title="Notiz / Sticky Note hinzufügen"
+        >
+          <FileText className="w-3.5 h-3.5 text-amber-500" />
+          <span>Notiz</span>
+        </button>
+
         {/* Multi-Selection Tools */}
         {selectedNodeIds.length > 1 && (
           <>
@@ -1435,10 +1580,10 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
         selectionMode={SelectionMode.Partial}
         selectionOnDrag={isSelectMode}
         panOnDrag={isSelectMode ? [1, 2] : true}
-        panOnScroll={true}
+        panOnScroll={navMode === 'trackpad'}
         panOnScrollMode={PanOnScrollMode.Free}
         panOnScrollSpeed={1}
-        zoomOnScroll={false}
+        zoomOnScroll={navMode === 'mouse'}
         zoomOnPinch={true}
         zoomActivationKeyCode={['Meta', 'Control']}
         preventScrolling={true}
@@ -1636,6 +1781,14 @@ const FreeModelCanvasInner: React.FC<FreeModelCanvasInnerProps> = ({
           }}
           onCreateNote={(pos) => {
             handleCreateNoteAt(pos);
+            setContextMenu(null);
+          }}
+          onCreateSection={(pos) => {
+            handleCreateSectionAt(pos);
+            setContextMenu(null);
+          }}
+          onCreateShape={(shapeType, pos) => {
+            handleCreateShapeAt(shapeType, pos);
             setContextMenu(null);
           }}
           onAlign={handleAlign}

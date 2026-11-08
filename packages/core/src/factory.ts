@@ -1,6 +1,6 @@
 import { uid } from './ids';
 import { SCHEMA_VERSION } from './schema';
-import type { Board, ComponentDef, Endpoint, Field, HttpMethod, Lane, Model, Project } from './schema';
+import type { Board, ComponentDef, Endpoint, Field, HttpMethod, Lane, Model, Project, SectionNode, ShapeNode } from './schema';
 
 export function createLanes(): Lane[] {
   return [
@@ -48,6 +48,50 @@ export function createEndpoint(method: HttpMethod = 'GET', path = '/neu'): Endpo
 
 export function createComponent(name: string, kind = 'button'): ComponentDef {
   return { id: uid('c_'), name, kind };
+}
+
+export function createSectionNode(
+  label = 'Neuer Bereich',
+  x = 100,
+  y = 100,
+  width = 500,
+  height = 380,
+  color = '#3b82f6'
+): SectionNode {
+  return {
+    id: uid('sec_'),
+    kind: 'section',
+    label,
+    color,
+    width,
+    height,
+    position: { x, y },
+  };
+}
+
+export function createShapeNode(
+  shapeType: 'rectangle' | 'circle' | 'text',
+  x = 100,
+  y = 100,
+  label = '',
+  color?: string
+): ShapeNode {
+  const defaultColors: Record<string, string> = {
+    rectangle: '#f1f5f9',
+    circle: '#e0f2fe',
+    text: 'transparent',
+  };
+  return {
+    id: uid('shp_'),
+    kind: 'shape',
+    shapeType,
+    label: label || (shapeType === 'text' ? 'Text hier eingeben...' : ''),
+    color: color ?? defaultColors[shapeType] ?? '#f1f5f9',
+    width: shapeType === 'circle' ? 140 : shapeType === 'text' ? 220 : 180,
+    height: shapeType === 'circle' ? 140 : shapeType === 'text' ? 50 : 120,
+    fontSize: shapeType === 'text' ? 18 : 14,
+    position: { x, y },
+  };
 }
 
 /** Returns `base`, or `base2`, `base3`, ... if the name is already taken. */

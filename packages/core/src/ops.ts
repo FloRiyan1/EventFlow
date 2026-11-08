@@ -78,6 +78,10 @@ export function nodeTitle(p: Project, node: FlowNode): string {
       const ep = p.endpoints.find((e) => e.id === node.endpointId);
       return ep ? `${ep.method} ${ep.path}` : 'Gelöschter Endpoint';
     }
+    case 'section':
+      return node.label || 'Bereich';
+    case 'shape':
+      return node.label ? node.label.split('\n')[0] : (node.shapeType === 'circle' ? 'Kreis' : node.shapeType === 'text' ? 'Text' : 'Kasten');
   }
 }
 
