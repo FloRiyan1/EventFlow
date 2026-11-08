@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useStore, useEditorStore } from '../storeContext';
 import {
   fieldsFromText,
@@ -7,9 +7,11 @@ import {
   referencedTypeNames,
   renameModel,
   sortModelFields,
+  getDescendantModels,
+  getInheritedFields,
 } from '@eventflow/core';
 import type { Model, FieldSortCriterion } from '@eventflow/core';
-import { X, Check, Database, Sparkles, ArrowUpDown } from 'lucide-react';
+import { X, Check, Database, Sparkles, ArrowUpDown, GitFork } from 'lucide-react';
 
 interface Props {
   modelId: string | null;
@@ -18,17 +20,43 @@ interface Props {
 
 export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
   const store = useEditorStore();
+  const project = useStore((s) => s.project);
   const model = useStore((s) => (modelId ? s.project.models.find((m) => m.id === modelId) : null));
 
   const [name, setName] = useState('');
   const [text, setText] = useState('');
+  const [extendsModelId, setExtendsModelId] = useState<string | undefined>(model?.extendsModelId);
+  const [isAbstract, setIsAbstract] = useState<boolean>(model?.isAbstract ?? false);
 
   useEffect(() => {
     if (model) {
       setName(model.name);
       setText(fieldsToText(model.fields));
+      setExtendsModelId(model.extendsModelId);
+      setIsAbstract(model.isAbstract ?? false);
     }
   }, [model]);
+
+  const allModels = project.models;
+
+  const descendantIds = useMemo(() => {
+    if (!model) return new Set<string>();
+    return new Set(getDescendantModels(project, model.id).map((m) => m.id));
+  }, [project, model]);
+
+  const candidateParents = useMemo(() => {
+    if (!model) return [];
+    return allModels.filter((m) => m.id !== model.id && !descendantIds.has(m.id));
+  }, [allModels, model, descendantIds]);
+
+  const parentModel = useMemo(() => {
+    return extendsModelId ? allModels.find((m) => m.id === extendsModelId) : undefined;
+  }, [allModels, extendsModelId]);
+
+  const inheritedFields = useMemo(() => {
+    if (!model || !extendsModelId) return [];
+    return getInheritedFields(project, { ...model, extendsModelId });
+  }, [project, model, extendsModelId]);
 
   if (!modelId || !model) return null;
 
@@ -41,6 +69,8 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
       name: name || model.name,
       description: model.description || '',
       fields: [...parsedFields],
+      extendsModelId,
+      isAbstract,
     };
     sortModelFields(currentProject, dummyModel, criterion);
     setText(fieldsToText(dummyModel.fields));
@@ -60,6 +90,8 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
       const targetModel = draft.models.find((m) => m.id === model.id);
       if (targetModel) {
         targetModel.fields = parsedFields;
+        targetModel.extendsModelId = extendsModelId || undefined;
+        targetModel.isAbstract = isAbstract;
       }
       // Auto-create missing models
       ensureModelsForFields(draft, parsedFields);
@@ -77,9 +109,21 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-bold text-base text-slate-900 dark:text-slate-100">Model bearbeiten</h2>
+              <h2 className="font-bold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                Model bearbeiten
+                {isAbstract && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 font-semibold">
+                    «abstract»
+                  </span>
+                )}
+                {parentModel && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 font-semibold flex items-center gap-1">
+                    <GitFork className="w-3 h-3" /> extends {parentModel.name}
+                  </span>
+                )}
+              </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Passe den Model-Namen und die Felder im Fließtext an (Dart/Java-Syntax).
+                Passe den Model-Namen, Vererbung und die Felder im Fließtext an.
               </p>
             </div>
           </div>
@@ -92,7 +136,7 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1">Model Name</label>
             <input
@@ -103,6 +147,77 @@ export const ModelQuickEditModal: React.FC<Props> = ({ modelId, onClose }) => {
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-semibold text-orange-600 dark:text-orange-300 focus:outline-none focus:border-orange-500 dark:focus:border-orange-400"
             />
           </div>
+
+          {/* Inheritance & Abstract Settings */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1 flex items-center gap-1">
+                <GitFork className="w-3.5 h-3.5 text-violet-500" /> Erbt von Basismodell (extends)
+              </label>
+              <select
+                value={extendsModelId || ''}
+                onChange={(e) => setExtendsModelId(e.target.value || undefined)}
+                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:border-violet-500"
+              >
+                <option value="">(Keine Vererbung)</option>
+                {candidateParents.map((pm) => (
+                  <option key={pm.id} value={pm.id}>
+                    {pm.name} {pm.isAbstract ? '(«abstract»)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer select-none hover:border-purple-400 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={isAbstract}
+                  onChange={(e) => setIsAbstract(e.target.checked)}
+                  className="rounded text-purple-600 focus:ring-0 w-4 h-4"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Abstraktes Modell (isAbstract)
+                  </span>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Wird als abstrakte Klasse exportiert
+                  </p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Inherited Fields Preview */}
+          {parentModel && (
+            <div className="p-3 bg-violet-50/70 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/60 rounded-xl text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-semibold text-violet-800 dark:text-violet-300">
+                <span className="flex items-center gap-1">
+                  <GitFork className="w-3.5 h-3.5" /> Geerbte Felder von {parentModel.name}
+                </span>
+                <span className="text-[11px] font-normal text-violet-600 dark:text-violet-400">
+                  {inheritedFields.length} {inheritedFields.length === 1 ? 'Feld' : 'Felder'} geerbt
+                </span>
+              </div>
+              {inheritedFields.length > 0 ? (
+                <div className="flex flex-wrap gap-1 font-mono text-[11px] pt-0.5">
+                  {inheritedFields.map((f) => (
+                    <span
+                      key={f.id}
+                      className="px-2 py-0.5 bg-white dark:bg-slate-900 text-violet-700 dark:text-violet-300 rounded border border-violet-200 dark:border-violet-800 shadow-xs"
+                      title={`Geerbtes Feld: ${f.name} (${f.type})`}
+                    >
+                      <span className="text-violet-500 font-semibold">{f.type}</span>
+                      {f.nullable ? '?' : ''} {f.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic">
+                  Das Basismodell {parentModel.name} hat aktuell keine Felder.
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">

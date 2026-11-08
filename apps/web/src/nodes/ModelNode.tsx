@@ -8,6 +8,7 @@ import {
   ensureModelsForFields,
   reorderModelField,
   sortModelFields,
+  getInheritedFields,
 } from '@eventflow/core';
 import {
   Database,
@@ -20,6 +21,7 @@ import {
   ArrowUpDown,
   ChevronUp,
   ChevronDown,
+  GitFork,
 } from 'lucide-react';
 
 interface Props {
@@ -30,8 +32,14 @@ interface Props {
 
 export const ModelNode = memo(({ id, data, selected }: Props) => {
   const store = useEditorStore();
+  const project = useStore((s) => s.project);
   const storeModel = useStore((s) => s.project.models.find((m) => m.id === data.modelId));
   const model = data.model ?? storeModel;
+
+  const parentModel = model?.extendsModelId
+    ? project.models.find((m) => m.id === model.extendsModelId)
+    : null;
+  const inheritedFields = model && model.extendsModelId ? getInheritedFields(project, model) : [];
 
   // Name inline editing
   const [isEditingName, setIsEditingName] = useState(false);
@@ -243,13 +251,20 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
               className="nodrag nopan px-1.5 py-0.5 bg-white text-slate-900 rounded text-xs font-bold w-full outline-none ring-2 ring-slate-900 shadow-sm"
             />
           ) : (
-            <span
-              onClick={() => setIsEditingName(true)}
-              className="truncate cursor-pointer hover:bg-black/10 px-1 py-0.5 rounded transition-colors"
-              title="Klicken zum Umbenennen"
-            >
-              {model.name}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                onClick={() => setIsEditingName(true)}
+                className="truncate cursor-pointer hover:bg-black/10 px-1 py-0.5 rounded transition-colors"
+                title="Klicken zum Umbenennen"
+              >
+                {model.name}
+              </span>
+              {model.isAbstract && (
+                <span className="text-[10px] bg-slate-950/70 text-white px-1.5 py-0.2 rounded font-mono font-normal shrink-0 tracking-tight">
+                  «abstract»
+                </span>
+              )}
+            </div>
           )}
         </div>
 
@@ -323,9 +338,47 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
         </div>
       </div>
 
+      {/* Extends subheader */}
+      {parentModel && (
+        <div className="px-2.5 py-1 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-200 dark:border-violet-900/50 flex items-center justify-between text-[11px] text-violet-700 dark:text-violet-300 font-sans">
+          <span className="flex items-center gap-1 font-semibold truncate" title={`Erbt von ${parentModel.name}`}>
+            <GitFork className="w-3 h-3 shrink-0" />
+            <span className="truncate">extends {parentModel.name}</span>
+          </span>
+          <span className="text-[10px] text-violet-500 font-mono shrink-0 ml-1">
+            ({inheritedFields.length} geerbt)
+          </span>
+        </div>
+      )}
+
       {/* Fields (updated immediately when model changes) */}
       <div className="p-2.5 text-xs font-mono space-y-1 bg-white dark:bg-slate-900 flex-1 overflow-y-auto rounded-b-lg border-t border-orange-200 dark:border-orange-950/40">
-        {(model.fields || []).length === 0 && !isAddingField ? (
+        {/* Inherited Fields Section */}
+        {inheritedFields.length > 0 && (
+          <div className="mb-2 pb-1.5 border-b border-violet-200 dark:border-violet-900/60 space-y-0.5">
+            <div className="text-[10px] font-sans font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wider flex items-center gap-1 px-1">
+              <GitFork className="w-2.5 h-2.5" /> Geerbt von {parentModel?.name}
+            </div>
+            {inheritedFields.map((field) => (
+              <div
+                key={`inherited_${field.id}`}
+                className="flex items-center justify-between gap-1 leading-tight px-1.5 py-0.5 text-slate-400 dark:text-slate-500 select-none"
+                title={`Geerbtes Feld: ${field.name} (${field.type})`}
+              >
+                <div className="truncate flex-1">
+                  <span className="text-violet-600/70 dark:text-violet-400/70 font-semibold">{field.type}</span>
+                  {field.nullable && <span className="font-bold">?</span>}{' '}
+                  <span className="italic">{field.name}</span>
+                </div>
+                <span className="text-[9px] font-sans text-violet-600/70 dark:text-violet-400/70 bg-violet-100/50 dark:bg-violet-950/50 border border-violet-200 dark:border-violet-800 rounded px-1">
+                  geerbt
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(model.fields || []).length === 0 && inheritedFields.length === 0 && !isAddingField ? (
           <div className="text-slate-400 dark:text-slate-500 italic text-[11px] py-1 text-center">
             Keine Felder vorhanden
           </div>

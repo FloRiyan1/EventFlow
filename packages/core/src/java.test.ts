@@ -268,4 +268,50 @@ describe('Java Code Parsing (Import)', () => {
     expect(mapTypeToJava('')).toBe('Object');
     expect(mapTypeToJava(undefined as any)).toBe('Object');
   });
+
+  it('exports abstract class and extends in Java POJO and Lombok', () => {
+    const project = createEmptyProject('JavaInheritance');
+    const base = createModel('AbstractEntity', [
+      { id: 'f1', name: 'id', type: 'String', nullable: false },
+    ], undefined, true);
+
+    const child = createModel('CustomerEntity', [
+      { id: 'f2', name: 'name', type: 'String', nullable: false },
+    ], base.id, false);
+
+    project.models = [base, child];
+
+    const basePojo = exportModelToJava(base, { style: 'pojo', project });
+    expect(basePojo).toContain('public abstract class AbstractEntity {');
+
+    const childPojo = exportModelToJava(child, { style: 'pojo', project });
+    expect(childPojo).toContain('public class CustomerEntity extends AbstractEntity {');
+
+    // In record mode, models that extend a class must fall back to class
+    const childRecord = exportModelToJava(child, { style: 'record', project });
+    expect(childRecord).toContain('public class CustomerEntity extends AbstractEntity {');
+  });
+
+  it('imports abstract classes and extends from Java source code', () => {
+    const project = createEmptyProject('ImportInheritance');
+    const javaCode = `
+      public abstract class BaseDto {
+          private String id;
+      }
+
+      public class UserDto extends BaseDto {
+          private String name;
+      }
+    `;
+
+    const result = importJavaIntoProject(project, javaCode);
+    expect(result.createdCount).toBe(2);
+
+    const base = project.models.find((m) => m.name === 'BaseDto')!;
+    const user = project.models.find((m) => m.name === 'UserDto')!;
+
+    expect(base.isAbstract).toBe(true);
+    expect(user.isAbstract).toBe(false);
+    expect(user.extendsModelId).toBe(base.id);
+  });
 });

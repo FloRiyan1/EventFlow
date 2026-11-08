@@ -38,8 +38,13 @@ export function createEmptyProject(name = 'Neues Projekt'): Project {
   };
 }
 
-export function createModel(name: string, fields: Field[] = []): Model {
-  return { id: uid('m_'), name, description: '', fields };
+export function createModel(
+  name: string,
+  fields: Field[] = [],
+  extendsModelId?: string,
+  isAbstract = false
+): Model {
+  return { id: uid('m_'), name, description: '', fields, extendsModelId, isAbstract };
 }
 
 export function createEndpoint(method: HttpMethod = 'GET', path = '/neu'): Endpoint {

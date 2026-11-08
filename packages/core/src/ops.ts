@@ -305,6 +305,70 @@ export interface ModelHierarchyInfo {
   isRoot: boolean;
   subModels: { field: Field; model: Model }[];
   parentModels: Model[];
+  extendedModel?: Model;
+  childModels: Model[];
+  inheritedFields: Field[];
+}
+
+/**
+ * Resolves all inherited fields of a model through its inheritance chain (ancestors, without cycles).
+ */
+export function getInheritedFields(p: Project, model: Model): Field[] {
+  const result: Field[] = [];
+  const visited = new Set<string>([model.id]);
+  let currentId = model.extendsModelId;
+
+  while (currentId) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    const parent = p.models.find((m) => m.id === currentId);
+    if (!parent) break;
+    result.unshift(...parent.fields);
+    currentId = parent.extendsModelId;
+  }
+
+  return result;
+}
+
+/**
+ * Returns all direct and indirect ancestor models in order (parent, grandparent, ...).
+ */
+export function getAncestorModels(p: Project, model: Model): Model[] {
+  const ancestors: Model[] = [];
+  const visited = new Set<string>([model.id]);
+  let currentId = model.extendsModelId;
+
+  while (currentId) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    const parent = p.models.find((m) => m.id === currentId);
+    if (!parent) break;
+    ancestors.push(parent);
+    currentId = parent.extendsModelId;
+  }
+
+  return ancestors;
+}
+
+/**
+ * Returns all direct and indirect child models that inherit from this model.
+ */
+export function getDescendantModels(p: Project, modelId: string): Model[] {
+  const descendants: Model[] = [];
+  const queue = [modelId];
+  const visited = new Set<string>([modelId]);
+
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    const children = p.models.filter((m) => m.extendsModelId === curr && !visited.has(m.id));
+    for (const ch of children) {
+      visited.add(ch.id);
+      descendants.push(ch);
+      queue.push(ch.id);
+    }
+  }
+
+  return descendants;
 }
 
 export function getModelHierarchyInfo(p: Project, modelId: string): ModelHierarchyInfo {
@@ -328,11 +392,20 @@ export function getModelHierarchyInfo(p: Project, modelId: string): ModelHierarc
     (other) => other.id !== model.id && other.fields.some((f) => referencedTypeNames(f.type).includes(model.name))
   );
 
+  const extendedModel = model.extendsModelId
+    ? p.models.find((m) => m.id === model.extendsModelId)
+    : undefined;
+  const childModels = p.models.filter((m) => m.extendsModelId === model.id);
+  const inheritedFields = getInheritedFields(p, model);
+
   return {
     model,
-    isRoot: parentModels.length === 0,
+    isRoot: parentModels.length === 0 && !extendedModel,
     subModels,
     parentModels,
+    extendedModel,
+    childModels,
+    inheritedFields,
   };
 }
 

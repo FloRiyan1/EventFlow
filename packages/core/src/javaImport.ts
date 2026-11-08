@@ -13,6 +13,8 @@ export interface ParsedJavaField {
 export interface ParsedJavaModel {
   name: string;
   kind: 'record' | 'class';
+  isAbstract?: boolean;
+  extendsModelName?: string;
   fields: ParsedJavaField[];
   packageName?: string;
   rawText?: string;
@@ -361,12 +363,14 @@ export function parseJavaCode(source: string): JavaParseResult {
 
   // 2. Find all records and classes
   // We scan using regex with balanced brace matching for class/record bodies.
-  const declRegex = /\b(record|class)\s+([A-Za-z0-9_]+)\b/g;
+  const declRegex = /\b(?:(abstract)\s+)?(?:(?:public|protected|private|final)\s+)*(?:(abstract)\s+)?(record|class)\s+([A-Za-z0-9_]+)(?:\s+extends\s+([A-Za-z0-9_]+)(?:<[^>]+>)?)?/g;
   let match: RegExpExecArray | null;
 
   while ((match = declRegex.exec(clean)) !== null) {
-    const kind = match[1] as 'record' | 'class';
-    const name = match[2];
+    const isAbstract = match[1] === 'abstract' || match[2] === 'abstract';
+    const kind = match[3] as 'record' | 'class';
+    const name = match[4];
+    const extendsModelName = match[5];
     const startIndex = match.index;
 
     if (kind === 'record') {
@@ -398,6 +402,8 @@ export function parseJavaCode(source: string): JavaParseResult {
       models.push({
         name,
         kind: 'record',
+        isAbstract,
+        extendsModelName,
         fields,
         packageName,
       });
@@ -430,6 +436,8 @@ export function parseJavaCode(source: string): JavaParseResult {
       models.push({
         name,
         kind: 'class',
+        isAbstract,
+        extendsModelName,
         fields,
         packageName,
       });
@@ -474,6 +482,9 @@ export function importJavaIntoProject(
       if (mergeExisting) {
         // Merge or replace fields
         const existing = project.models[existingIndex];
+        if (parsed.isAbstract !== undefined) {
+          existing.isAbstract = parsed.isAbstract;
+        }
 
         for (const cf of convertedFields) {
           const idx = existing.fields.findIndex((f) => f.name === cf.name);
@@ -488,16 +499,34 @@ export function importJavaIntoProject(
         updatedCount++;
       } else {
         // Create duplicate with suffix
-        const newModel = createModel(`${parsed.name}_Imported`, convertedFields);
+        const newModel = createModel(`${parsed.name}_Imported`, convertedFields, undefined, parsed.isAbstract ?? false);
         project.models.push(newModel);
         importedModels.push(newModel);
         createdCount++;
       }
     } else {
-      const newModel = createModel(parsed.name, convertedFields);
+      const newModel = createModel(parsed.name, convertedFields, undefined, parsed.isAbstract ?? false);
       project.models.push(newModel);
       importedModels.push(newModel);
       createdCount++;
+    }
+  }
+
+  // Resolve inheritance (extends)
+  for (const parsed of parseResult.models) {
+    if (parsed.extendsModelName) {
+      let parentModel = project.models.find((m) => m.name === parsed.extendsModelName);
+      if (!parentModel && createReferencedModels) {
+        parentModel = createModel(parsed.extendsModelName, [], undefined, true);
+        project.models.push(parentModel);
+        referencedCreatedCount++;
+      }
+      if (parentModel) {
+        const childModel = project.models.find((m) => m.name === parsed.name);
+        if (childModel && childModel.id !== parentModel.id) {
+          childModel.extendsModelId = parentModel.id;
+        }
+      }
     }
   }
 

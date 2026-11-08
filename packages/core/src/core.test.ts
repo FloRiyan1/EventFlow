@@ -27,6 +27,11 @@ import {
   calculateAlignmentSnap,
   snapToGridValue,
   alignNodes,
+  getInheritedFields,
+  getAncestorModels,
+  getDescendantModels,
+  exportModelToDart,
+  exportAllModelsToDart,
 } from './index';
 
 describe('Field Parser', () => {
@@ -747,6 +752,78 @@ n2 --> n3 : returns
       // X positions are unchanged
       expect(aligned[0].position.x).toBe(50);
       expect(aligned[1].position.x).toBe(300);
+    });
+  });
+
+  describe('Model Inheritance', () => {
+    it('resolves ancestors and inherited fields without cycles', () => {
+      const project = createEmptyProject('InheritanceTest');
+      const base = createModel('AbstractBase', [
+        { id: 'f_id', name: 'id', type: 'String', nullable: false },
+        { id: 'f_created', name: 'createdAt', type: 'DateTime', nullable: false },
+      ], undefined, true);
+
+      const entity = createModel('AbstractEntity', [
+        { id: 'f_version', name: 'version', type: 'int', nullable: false },
+      ], base.id, true);
+
+      const customer = createModel('Customer', [
+        { id: 'f_name', name: 'name', type: 'String', nullable: false },
+      ], entity.id, false);
+
+      project.models = [base, entity, customer];
+
+      const ancestors = getAncestorModels(project, customer);
+      expect(ancestors.map((m) => m.name)).toEqual(['AbstractEntity', 'AbstractBase']);
+
+      const inherited = getInheritedFields(project, customer);
+      expect(inherited.map((f) => f.name)).toEqual(['id', 'createdAt', 'version']);
+
+      const descendants = getDescendantModels(project, base.id);
+      expect(descendants.map((m) => m.name).sort()).toEqual(['AbstractEntity', 'Customer']);
+
+      const hierarchy = getModelHierarchyInfo(project, customer.id);
+      expect(hierarchy.extendedModel?.name).toBe('AbstractEntity');
+      expect(hierarchy.inheritedFields).toHaveLength(3);
+    });
+
+    it('safely breaks cycles if a cycle is introduced', () => {
+      const project = createEmptyProject('CycleTest');
+      const a = createModel('A', [{ id: 'f_a', name: 'fieldA', type: 'String', nullable: false }]);
+      const b = createModel('B', [{ id: 'f_b', name: 'fieldB', type: 'String', nullable: false }], a.id);
+      a.extendsModelId = b.id; // circular!
+      project.models = [a, b];
+
+      expect(() => getAncestorModels(project, a)).not.toThrow();
+      expect(() => getInheritedFields(project, a)).not.toThrow();
+      expect(getAncestorModels(project, a).length).toBe(1);
+    });
+
+    it('exports inheritance to Dart correctly', () => {
+      const project = createEmptyProject('DartTest');
+      const base = createModel('BaseModel', [{ id: 'f1', name: 'id', type: 'String', nullable: false }], undefined, true);
+      const child = createModel('ChildModel', [{ id: 'f2', name: 'title', type: 'String', nullable: false }], base.id);
+      project.models = [base, child];
+
+      const baseCode = exportModelToDart(base, project);
+      expect(baseCode).toContain('abstract class BaseModel {');
+
+      const childCode = exportModelToDart(child, project);
+      expect(childCode).toContain('class ChildModel extends BaseModel {');
+      expect(childCode).toContain('ChildModel.fromJson');
+    });
+
+    it('exports inheritance to PlantUML correctly', () => {
+      const project = createEmptyProject('PlantUmlTest');
+      const base = createModel('AbstractEntity', [{ id: 'f1', name: 'id', type: 'String', nullable: false }], undefined, true);
+      const child = createModel('UserEntity', [{ id: 'f2', name: 'email', type: 'String', nullable: false }], base.id);
+      project.models = [base, child];
+
+      const puml = exportModelsToPlantUml(project);
+      expect(puml).toContain('abstract class "AbstractEntity"');
+      expect(puml).toContain('class "UserEntity"');
+      expect(puml).toContain('<|--');
+      expect(puml).toContain(': extends');
     });
   });
 });

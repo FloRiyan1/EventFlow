@@ -28,6 +28,8 @@ export const ModelSchema = z.object({
   name: z.string(),
   description: z.string().default(''),
   fields: z.array(FieldSchema).default([]),
+  extendsModelId: z.string().optional(),
+  isAbstract: z.boolean().optional(),
 });
 
 export const HttpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);

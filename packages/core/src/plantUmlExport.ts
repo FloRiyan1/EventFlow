@@ -179,12 +179,25 @@ export function exportModelsToPlantUml(project: Project): string {
   // Define classes
   for (const model of project.models) {
     const alias = toPlantUmlId(model.id);
-    lines.push(`class "${escapePuml(model.name)}" as ${alias} #FFF7ED {`);
+    const classKw = model.isAbstract ? 'abstract class' : 'class';
+    lines.push(`${classKw} "${escapePuml(model.name)}" as ${alias} #FFF7ED {`);
     for (const f of model.fields) {
       lines.push(`  +${escapePuml(f.name)}: ${escapePuml(f.type)}${f.nullable ? '?' : ''}`);
     }
     lines.push('}');
     lines.push('');
+  }
+
+  // Draw inheritance relationships between models (<|--)
+  for (const model of project.models) {
+    if (model.extendsModelId) {
+      const parentModel = project.models.find((m) => m.id === model.extendsModelId);
+      if (parentModel) {
+        const parentAlias = toPlantUmlId(parentModel.id);
+        const childAlias = toPlantUmlId(model.id);
+        lines.push(`${parentAlias} <|-- ${childAlias} : extends`);
+      }
+    }
   }
 
   // Draw relationships between models

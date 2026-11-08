@@ -87,6 +87,7 @@ import {
   Circle,
   Type,
   FileText,
+  GitFork,
 } from 'lucide-react';
 import { useTheme } from '../themeContext';
 import { ModelNode } from '../nodes/ModelNode';
@@ -117,12 +118,13 @@ const ErdModelNode: React.FC<{
     model: Model;
     isRoot: boolean;
     parentNames: string[];
+    extendedModelName?: string;
     onEdit: () => void;
     onFocus?: () => void;
     isFocused?: boolean;
   };
 }> = ({ data }) => {
-  const { model, isRoot, parentNames, onEdit, onFocus, isFocused } = data;
+  const { model, isRoot, parentNames, extendedModelName, onEdit, onFocus, isFocused } = data;
   return (
     <div
       onDoubleClick={onEdit}
@@ -164,6 +166,16 @@ const ErdModelNode: React.FC<{
           <span className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
             {model.name}
           </span>
+          {model.isAbstract && (
+            <span className="text-[9px] bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 px-1 py-0.2 rounded font-mono border border-purple-200 dark:border-purple-800 shrink-0 font-semibold">
+              «abstract»
+            </span>
+          )}
+          {extendedModelName && (
+            <span className="text-[9px] bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 px-1 py-0.2 rounded font-mono border border-violet-200 dark:border-violet-800 shrink-0 font-semibold truncate max-w-[100px]">
+              extends {extendedModelName}
+            </span>
+          )}
           {isFocused && (
             <span className="text-[10px] bg-orange-200 dark:bg-orange-900/80 text-orange-800 dark:text-orange-200 px-1 rounded font-semibold shrink-0">
               Fokus
@@ -452,10 +464,23 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
           </div>
 
           <div className="flex flex-col">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-sm text-slate-900 dark:text-white">
                 {model.name}
               </span>
+
+              {model.isAbstract && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-900/60 font-mono">
+                  «abstract»
+                </span>
+              )}
+
+              {hierarchy.extendedModel && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-900/60 flex items-center gap-1 font-mono">
+                  <GitFork className="w-3 h-3" />
+                  <span>extends {hierarchy.extendedModel.name}</span>
+                </span>
+              )}
 
               {hierarchy.isRoot ? (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/60">
@@ -565,6 +590,38 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
       {/* Expanded Body: Fields & Nested Submodels */}
       {isExpanded && (
         <div className="p-3.5 space-y-3">
+          {/* Inherited Fields Banner if model extends another model */}
+          {hierarchy.extendedModel && (
+            <div className="p-3 bg-violet-50/70 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/60 rounded-xl text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-semibold text-violet-800 dark:text-violet-300">
+                <span className="flex items-center gap-1.5">
+                  <GitFork className="w-3.5 h-3.5" />
+                  <span>Erbt von Basismodell: <strong className="font-bold">{hierarchy.extendedModel.name}</strong></span>
+                </span>
+                <span className="text-[11px] font-normal text-violet-600 dark:text-violet-400">
+                  {hierarchy.inheritedFields.length} {hierarchy.inheritedFields.length === 1 ? 'Feld' : 'Felder'} geerbt
+                </span>
+              </div>
+              {hierarchy.inheritedFields.length > 0 ? (
+                <div className="flex flex-wrap gap-1 font-mono text-[11px] pt-0.5">
+                  {hierarchy.inheritedFields.map((f) => (
+                    <span
+                      key={`tree_inh_${f.id}`}
+                      className="px-2 py-0.5 bg-white dark:bg-slate-900 text-violet-700 dark:text-violet-300 rounded border border-violet-200 dark:border-violet-800 shadow-xs"
+                      title={`Geerbt von ${hierarchy.extendedModel?.name}: ${f.name} (${f.type})`}
+                    >
+                      <span className="text-violet-500 font-semibold">{f.type}</span>{f.nullable ? '?' : ''} {f.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic">
+                  Das Basismodell {hierarchy.extendedModel.name} hat bisher keine Felder.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Inline Add Field Form */}
           {isAddingField && (
             <div className="p-2.5 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
@@ -2369,6 +2426,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
       const isRoot = rootModels.some((r) => r.id === m.id);
       const info = getModelHierarchyInfo(project, m.id);
       const pos = positions.get(m.id) || { x: 80, y: 80 };
+      const extendedModel = m.extendsModelId ? project.models.find((p) => p.id === m.extendsModelId) : undefined;
 
       nodesList.push({
         id: m.id,
@@ -2378,12 +2436,44 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
           model: m,
           isRoot,
           parentNames: info.parentModels.map((p) => p.name),
+          extendedModelName: extendedModel?.name,
           onEdit: () => onEditModel(m.id),
           onFocus: () =>
             setErdFilterModelId((curr) => (curr === m.id ? 'all' : m.id)),
           isFocused: erdFilterModelId === m.id,
         },
       });
+
+      // Inheritance edge
+      if (m.extendsModelId) {
+        const targetParent = visibleModels.find((p) => p.id === m.extendsModelId);
+        if (targetParent) {
+          edgesList.push({
+            id: `edge_extends_${m.id}_${targetParent.id}`,
+            source: m.id,
+            target: targetParent.id,
+            sourceHandle: 'top',
+            targetHandle: 'bottom',
+            type: 'smoothstep',
+            zIndex: 12,
+            label: 'extends',
+            style: { stroke: '#8b5cf6', strokeWidth: 2, strokeDasharray: '4 4' },
+            labelStyle: { fill: '#7c3aed', fontSize: 10, fontWeight: 700 },
+            labelBgStyle: {
+              fill: theme === 'dark' ? '#0f172a' : '#ffffff',
+              rx: 4,
+              ry: 4,
+            },
+            labelBgPadding: [6, 3],
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: '#8b5cf6',
+              width: 16,
+              height: 16,
+            },
+          });
+        }
+      }
 
       for (const field of m.fields) {
         const refs = referencedTypeNames(field.type);
