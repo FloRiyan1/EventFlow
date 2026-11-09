@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect, useRef } from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { Handle, Position, NodeResizer, useReactFlow } from '@xyflow/react';
 import { useStore, useEditorStore } from '../storeContext';
 import type { ModelNode as ModelNodeType, Model, Field, FieldSortCriterion } from '@eventflow/core';
 import {
@@ -23,6 +23,9 @@ import {
   ChevronUp,
   ChevronDown,
   GitFork,
+  ExternalLink,
+  Minimize2,
+  Maximize2,
 } from 'lucide-react';
 
 interface Props {
@@ -59,6 +62,47 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
 
   // Field Reordering and Sorting menu
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
+  // Dedicated tile for abstract / inherited fields (stays in background by default)
+  const [showInheritedTile, setShowInheritedTile] = useState(false);
+
+  // Minimize/collapse model node (useful for background abstract base templates)
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const { setCenter } = useReactFlow();
+  const activeBoardId = useStore((s) => s.activeBoardId);
+  const currentBoard = useStore((s) => s.project.boards.find((b) => b.id === activeBoardId));
+  const isParentOnCurrentBoard = Boolean(
+    currentBoard?.nodes.some((n) => n.kind === 'model' && (n as unknown as { modelId?: string }).modelId === parentModel?.id)
+  );
+
+  const handleJumpToParentOrAdd = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!parentModel) return;
+    const existingNode = currentBoard?.nodes.find(
+      (n) => n.kind === 'model' && (n as unknown as { modelId?: string }).modelId === parentModel.id
+    );
+    if (existingNode) {
+      setCenter(existingNode.position.x + 120, existingNode.position.y + 100, {
+        zoom: 1.1,
+        duration: 600,
+      });
+    } else {
+      store.update((draft) => {
+        const b = draft.boards.find((item) => item.id === activeBoardId);
+        if (!b) return;
+        const thisNode = b.nodes.find((item) => item.id === id);
+        const baseX = thisNode ? thisNode.position.x - 260 : 150;
+        const baseY = thisNode ? thisNode.position.y : 150;
+        b.nodes.push({
+          id: `m_node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          kind: 'model',
+          modelId: parentModel.id,
+          position: { x: baseX, y: baseY },
+        });
+      });
+    }
+  };
 
   const handleResizeEnd = (_: unknown, params: { x: number; y: number; width: number; height: number }) => {
     store.update((draft) => {
@@ -217,15 +261,23 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
 
   return (
     <div
-      className={`relative w-full h-full min-w-[200px] min-h-[80px] rounded-lg shadow-lg dark:shadow-xl border flex flex-col ${
-        selected ? 'border-orange-500 ring-2 ring-orange-400' : 'border-orange-300 dark:border-orange-500/60 hover:border-orange-500'
-      } bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 group`}
+      className={`relative w-full ${
+        isCollapsed ? 'h-auto min-h-0' : 'h-full min-h-[80px]'
+      } min-w-[200px] rounded-lg shadow-lg dark:shadow-xl border flex flex-col ${
+        model.isAbstract
+          ? selected
+            ? 'border-dashed border-2 border-amber-500 ring-2 ring-amber-400 bg-amber-50/20 dark:bg-slate-900'
+            : 'border-dashed border-2 border-amber-500/80 hover:border-amber-500 bg-amber-50/10 dark:bg-slate-900/90'
+          : selected
+            ? 'border-orange-500 ring-2 ring-orange-400 bg-white dark:bg-slate-900'
+            : 'border-orange-300 dark:border-orange-500/60 hover:border-orange-500 bg-white dark:bg-slate-900'
+      } text-slate-800 dark:text-slate-100 group`}
     >
       <NodeResizer
         isVisible={selected}
         minWidth={200}
-        minHeight={80}
-        color="#FF9F1C"
+        minHeight={isCollapsed ? 44 : 80}
+        color={model.isAbstract ? '#F59E0B' : '#FF9F1C'}
         onResizeEnd={handleResizeEnd}
       />
       {/* Target handle on Top */}
@@ -243,8 +295,14 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
         className="!bg-white !w-3 !h-3 !border-2 !border-orange-500 shadow-sm"
       />
 
-      {/* Header with orange banner */}
-      <div className="p-2.5 bg-[#FF9F1C] text-slate-950 flex items-center justify-between font-bold text-sm tracking-tight border-b border-orange-600/30 rounded-t-lg">
+      {/* Header with orange/amber banner */}
+      <div
+        className={`p-2.5 ${
+          model.isAbstract ? 'bg-amber-500 dark:bg-amber-600' : 'bg-[#FF9F1C]'
+        } text-slate-950 flex items-center justify-between font-bold text-sm tracking-tight border-b border-orange-600/30 ${
+          isCollapsed ? 'rounded-lg' : 'rounded-t-lg'
+        }`}
+      >
         <div className="flex items-center gap-1.5 flex-1 min-w-0 mr-1">
           <Database className="w-4 h-4 opacity-80 shrink-0" />
           {isEditingName ? (
@@ -274,7 +332,7 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
                 {model.name}
               </span>
               {model.isAbstract && (
-                <span className="text-[10px] bg-slate-950/70 text-white px-1.5 py-0.2 rounded font-mono font-normal shrink-0 tracking-tight">
+                <span className="text-[10px] bg-slate-950/80 text-amber-200 px-1.5 py-0.2 rounded font-mono font-normal shrink-0 tracking-tight border border-amber-400/40">
                   «abstract»
                 </span>
               )}
@@ -349,56 +407,119 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
           >
             <Code2 className="w-3.5 h-3.5" />
           </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsCollapsed(!isCollapsed);
+            }}
+            title={isCollapsed ? 'Kachel aufklappen' : 'Kachel minimieren (Hintergrund)'}
+            className="p-1 hover:bg-black/10 rounded text-slate-900 opacity-60 hover:opacity-100 transition-opacity"
+          >
+            {isCollapsed ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </div>
 
-      {/* Extends subheader */}
-      {parentModel && (
-        <div className="px-2.5 py-1 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-200 dark:border-violet-900/50 flex items-center justify-between text-[11px] text-violet-700 dark:text-violet-300 font-sans">
-          <span className="flex items-center gap-1 font-semibold truncate" title={`Erbt von ${parentModel.name}`}>
-            <GitFork className="w-3 h-3 shrink-0" />
-            <span className="truncate">extends {parentModel.name}</span>
-          </span>
-          <span className="text-[10px] text-violet-500 font-mono shrink-0 ml-1">
-            ({inheritedFields.length} geerbt)
-          </span>
-        </div>
-      )}
-
-      {/* Fields (updated immediately when model changes) */}
-      <div className="p-2.5 text-xs font-mono space-y-1 bg-white dark:bg-slate-900 flex-1 overflow-y-auto rounded-b-lg border-t border-orange-200 dark:border-orange-950/40">
-        {/* Inherited Fields Section */}
-        {inheritedFields.length > 0 && (
-          <div className="mb-2 pb-1.5 border-b border-violet-200 dark:border-violet-900/60 space-y-0.5">
-            <div className="text-[10px] font-sans font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wider flex items-center gap-1 px-1">
-              <GitFork className="w-2.5 h-2.5" /> Geerbt von {parentModel?.name}
-            </div>
-            {inheritedFields.map((field) => (
-              <div
-                key={`inherited_${field.id}`}
-                className="flex items-center justify-between gap-1 leading-tight px-1.5 py-0.5 text-slate-400 dark:text-slate-500 select-none"
-                title={`Geerbtes Feld: ${field.name} (${field.type})`}
-              >
-                <div className="truncate flex-1">
-                  <span className="text-violet-600/70 dark:text-violet-400/70 font-semibold">{field.type}</span>
-                  {field.nullable && <span className="font-bold">?</span>}{' '}
-                  <span className="italic">{field.name}</span>
+      {/* When not collapsed: Render abstract info tile and model fields */}
+      {!isCollapsed && (
+        <>
+          {/* Dedicated Abstract Info Tile (collapsible, stays in background by default) */}
+          {parentModel && (
+            <div className="border-b border-violet-200/80 dark:border-violet-900/60 font-sans">
+              {!showInheritedTile ? (
+                <div className="px-2.5 py-1.5 bg-violet-50/70 dark:bg-violet-950/30 flex items-center justify-between text-[11px] text-violet-700 dark:text-violet-300">
+                  <span className="flex items-center gap-1.5 font-medium truncate" title={`Erbt von ${parentModel.name}`}>
+                    <GitFork className="w-3 h-3 text-violet-500 shrink-0" />
+                    <span className="truncate">Basis: <strong>{parentModel.name}</strong></span>
+                    <span className="text-[10px] text-violet-500/80 font-mono">({inheritedFields.length} geerbt)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowInheritedTile(true);
+                    }}
+                    className="px-2 py-0.5 text-[10px] rounded hover:bg-violet-100 dark:hover:bg-violet-900/60 font-semibold text-violet-700 dark:text-violet-300 transition-colors flex items-center gap-1 shrink-0 bg-violet-100/60 dark:bg-violet-900/40 border border-violet-200/60 dark:border-violet-800"
+                    title="Abstrakte Basis-Kachel einblenden"
+                  >
+                    <span>Kachel anzeigen</span>
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
                 </div>
-                <span className="text-[9px] font-sans text-violet-600/70 dark:text-violet-400/70 bg-violet-100/50 dark:bg-violet-950/50 border border-violet-200 dark:border-violet-800 rounded px-1">
-                  geerbt
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+              ) : (
+                <div className="m-1.5 p-2 bg-violet-50/90 dark:bg-violet-950/40 border border-violet-300 dark:border-violet-800 rounded-lg shadow-xs text-xs space-y-1.5 nodrag">
+                  <div className="flex items-center justify-between border-b border-violet-200 dark:border-violet-800/60 pb-1 text-[11px] font-bold text-violet-800 dark:text-violet-200">
+                    <span className="flex items-center gap-1 truncate" title={`Abstrakte Basis: ${parentModel.name}`}>
+                      <GitFork className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
+                      <span className="truncate">«abstract» {parentModel.name}</span>
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleJumpToParentOrAdd}
+                        className="px-1.5 py-0.5 rounded bg-violet-200/80 hover:bg-violet-300 dark:bg-violet-900/60 dark:hover:bg-violet-800 text-violet-900 dark:text-violet-100 text-[10px] font-medium flex items-center gap-1 transition-colors"
+                        title={
+                          isParentOnCurrentBoard
+                            ? `Zu ${parentModel.name} auf dem Board springen`
+                            : `Basismodell ${parentModel.name} als Kachel aufs Board legen`
+                        }
+                      >
+                        <ExternalLink className="w-2.5 h-2.5" />
+                        <span>{isParentOnCurrentBoard ? 'Zur Kachel' : '+ Auf Board'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowInheritedTile(false);
+                        }}
+                        className="p-0.5 text-violet-600 hover:text-violet-900 dark:text-violet-400 dark:hover:text-violet-100 rounded transition-colors"
+                        title="Kachel wieder verbergen"
+                      >
+                        <ChevronUp className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
 
-        {(model.fields || []).length === 0 && inheritedFields.length === 0 && !isAddingField ? (
-          <div className="text-slate-400 dark:text-slate-500 italic text-[11px] py-1 text-center">
-            Keine Felder vorhanden
-          </div>
-        ) : (
-          (model.fields || []).map((field, idx, arr) => {
-            const isEditingThisField = editingFieldId === field.id;
+                  {/* Inherited fields list */}
+                  <div className="space-y-0.5 max-h-32 overflow-y-auto font-mono">
+                    {inheritedFields.length === 0 ? (
+                      <div className="text-[10px] italic text-violet-500/80 py-0.5 font-sans">
+                        Keine Felder im Basismodell vorhanden
+                      </div>
+                    ) : (
+                      inheritedFields.map((field) => (
+                        <div
+                          key={`inh_${field.id}`}
+                          className="flex items-center justify-between gap-1 leading-tight px-1.5 py-0.5 bg-white/80 dark:bg-slate-900/60 rounded border border-violet-100 dark:border-violet-900/40 text-[10.5px] select-none"
+                          title={`Geerbtes Feld: ${field.name} (${field.type})`}
+                        >
+                          <div className="truncate flex-1">
+                            <span className="text-violet-600 dark:text-violet-400 font-semibold">{field.type}</span>
+                            {field.nullable && <span className="font-bold">?</span>}{' '}
+                            <span className="italic text-slate-700 dark:text-slate-300">{field.name}</span>
+                          </div>
+                          <span className="text-[9px] font-sans text-violet-600 dark:text-violet-400 bg-violet-100/70 dark:bg-violet-950/80 rounded px-1">
+                            geerbt
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fields (updated immediately when model changes) */}
+          <div className="p-2.5 text-xs font-mono space-y-1 bg-white dark:bg-slate-900 flex-1 overflow-y-auto rounded-b-lg border-t border-orange-200 dark:border-orange-950/40">
+            {(model.fields || []).length === 0 && !isAddingField ? (
+              <div className="text-slate-400 dark:text-slate-500 italic text-[11px] py-1 text-center font-sans">
+                Keine eigenen Felder vorhanden
+              </div>
+            ) : (
+              (model.fields || []).map((field, idx, arr) => {
+                const isEditingThisField = editingFieldId === field.id;
 
             if (isEditingThisField) {
               return (
@@ -566,6 +687,8 @@ export const ModelNode = memo(({ id, data, selected }: Props) => {
           </div>
         )}
       </div>
+    </>
+  )}
 
       {/* Source handle on Bottom */}
       <Handle

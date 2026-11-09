@@ -370,6 +370,7 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState('String');
   const [newFieldNullable, setNewFieldNullable] = useState(false);
+  const [showInheritedTreeTile, setShowInheritedTreeTile] = useState(false);
 
   const handleSaveNewField = () => {
     const trimmed = newFieldName.trim();
@@ -591,34 +592,64 @@ const TreeModelCard: React.FC<TreeModelCardProps> = ({
       {/* Expanded Body: Fields & Nested Submodels */}
       {isExpanded && (
         <div className="p-3.5 space-y-3">
-          {/* Inherited Fields Banner if model extends another model */}
+          {/* Inherited Fields Tile (collapsible, in background by default) */}
           {hierarchy.extendedModel && (
-            <div className="p-3 bg-violet-50/70 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/60 rounded-xl text-xs space-y-1.5">
-              <div className="flex items-center justify-between font-semibold text-violet-800 dark:text-violet-300">
-                <span className="flex items-center gap-1.5">
-                  <GitFork className="w-3.5 h-3.5" />
-                  <span>Erbt von Basismodell: <strong className="font-bold">{hierarchy.extendedModel.name}</strong></span>
-                </span>
-                <span className="text-[11px] font-normal text-violet-600 dark:text-violet-400">
-                  {hierarchy.inheritedFields.length} {hierarchy.inheritedFields.length === 1 ? 'Feld' : 'Felder'} geerbt
-                </span>
-              </div>
-              {hierarchy.inheritedFields.length > 0 ? (
-                <div className="flex flex-wrap gap-1 font-mono text-[11px] pt-0.5">
-                  {hierarchy.inheritedFields.map((f) => (
-                    <span
-                      key={`tree_inh_${f.id}`}
-                      className="px-2 py-0.5 bg-white dark:bg-slate-900 text-violet-700 dark:text-violet-300 rounded border border-violet-200 dark:border-violet-800 shadow-xs"
-                      title={`Geerbt von ${hierarchy.extendedModel?.name}: ${f.name} (${f.type})`}
-                    >
-                      <span className="text-violet-500 font-semibold">{f.type}</span>{f.nullable ? '?' : ''} {f.name}
-                    </span>
-                  ))}
+            <div className="border border-violet-200 dark:border-violet-900/60 rounded-xl overflow-hidden text-xs">
+              {!showInheritedTreeTile ? (
+                <div className="p-2.5 bg-violet-50/70 dark:bg-violet-950/30 flex items-center justify-between text-violet-800 dark:text-violet-300">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <GitFork className="w-3.5 h-3.5 text-violet-500" />
+                    <span>Basis: <strong>{hierarchy.extendedModel.name}</strong></span>
+                    <span className="text-[11px] text-violet-500 font-mono">({hierarchy.inheritedFields.length} geerbt)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowInheritedTreeTile(true)}
+                    className="px-2 py-0.5 text-[11px] font-semibold bg-violet-100 hover:bg-violet-200 dark:bg-violet-900/60 dark:hover:bg-violet-800 text-violet-800 dark:text-violet-200 rounded-md transition-colors flex items-center gap-1 border border-violet-200 dark:border-violet-800"
+                  >
+                    <span>Kachel anzeigen</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-500 italic">
-                  Das Basismodell {hierarchy.extendedModel.name} hat bisher keine Felder.
-                </p>
+                <div className="p-3 bg-violet-50/80 dark:bg-violet-950/40 space-y-2">
+                  <div className="flex items-center justify-between font-semibold text-violet-800 dark:text-violet-200 border-b border-violet-200 dark:border-violet-800/60 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <GitFork className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                      <span>«abstract» Basis-Kachel: {hierarchy.extendedModel.name}</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-normal text-violet-600 dark:text-violet-400">
+                        {hierarchy.inheritedFields.length} {hierarchy.inheritedFields.length === 1 ? 'Feld' : 'Felder'} geerbt
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowInheritedTreeTile(false)}
+                        className="p-1 text-violet-600 hover:text-violet-900 dark:text-violet-400 dark:hover:text-violet-100 rounded transition-colors"
+                        title="Kachel verbergen"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  {hierarchy.inheritedFields.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 font-mono text-[11px] pt-0.5">
+                      {hierarchy.inheritedFields.map((f) => (
+                        <span
+                          key={`tree_inh_${f.id}`}
+                          className="px-2 py-0.5 bg-white dark:bg-slate-900 text-violet-700 dark:text-violet-300 rounded border border-violet-200 dark:border-violet-800 shadow-xs"
+                          title={`Geerbt von ${hierarchy.extendedModel?.name}: ${f.name} (${f.type})`}
+                        >
+                          <span className="text-violet-500 font-semibold">{f.type}</span>{f.nullable ? '?' : ''} {f.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 italic">
+                      Das Basismodell {hierarchy.extendedModel.name} hat bisher keine Felder.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -2113,8 +2144,8 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
   const [sidebarScope, setSidebarScope] = useState<'page' | 'other' | 'all'>('page');
   const [isImportModelsModalOpen, setIsImportModelsModalOpen] = useState(false);
 
-  // Filter: 'all' | 'root' | 'sub'
-  const [filterType, setFilterType] = useState<'all' | 'root' | 'sub'>('all');
+  // Filter: 'all' | 'root' | 'sub' | 'abstract'
+  const [filterType, setFilterType] = useState<'all' | 'root' | 'sub' | 'abstract'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   // ERD View model filter state
@@ -2152,6 +2183,11 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     }
     return { rootModels: roots, subModels: subs };
   }, [project]);
+
+  // Abstract base models list
+  const abstractModels = useMemo(() => {
+    return project.models.filter((m) => m.isAbstract);
+  }, [project.models]);
 
   // Model Boards list
   const modelBoards = useMemo(() => {
@@ -2216,6 +2252,7 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
     return scopeModels.filter((m) => {
       if (filterType === 'root' && !rootModels.some((r) => r.id === m.id)) return false;
       if (filterType === 'sub' && !subModels.some((s) => s.id === m.id)) return false;
+      if (filterType === 'abstract' && !m.isAbstract) return false;
 
       if (!searchTerm) return true;
       const lower = searchTerm.toLowerCase();
@@ -2666,6 +2703,17 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                     >
                       Sub
                     </button>
+                    <button
+                      onClick={() => setFilterType('abstract')}
+                      className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                        filterType === 'abstract'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'
+                      }`}
+                      title="Abstrakte Basismodelle"
+                    >
+                      Abstrakt ({abstractModels.length})
+                    </button>
                   </div>
                 </div>
 
@@ -3013,6 +3061,17 @@ export const DataModelsView: React.FC<DataModelsViewProps> = ({
                 }`}
               >
                 Untermodelle ({subModels.length})
+              </button>
+              <button
+                onClick={() => setFilterType('abstract')}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  filterType === 'abstract'
+                    ? 'bg-amber-600 text-white font-semibold shadow-sm'
+                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+                }`}
+                title="Nur abstrakte Basismodelle anzeigen"
+              >
+                Abstrakte Basismodelle ({abstractModels.length})
               </button>
 
               <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
