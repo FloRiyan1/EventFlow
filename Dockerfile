@@ -19,24 +19,36 @@ RUN npm ci
 # Copy full source
 COPY packages/ ./packages/
 COPY apps/ ./apps/
+COPY server/ ./server/
 
 # Build core and web
 RUN npm run build
 
 # ==============================================================================
-# Stage 2: Serve with Nginx Alpine
+# Stage 2: Production Realtime Server (Node 20 Alpine)
 # ==============================================================================
-FROM nginx:alpine
+FROM node:20-alpine
 
-# Remove default nginx static assets
-RUN rm -rf /usr/share/nginx/html/*
+WORKDIR /app
 
-# Copy built assets from builder stage
-COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV DATA_DIR=/app/data
+ENV DIST_DIR=/app/apps/web/dist
 
-# Copy custom Nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Install production dependencies only
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-EXPOSE 80
+# Copy built assets and server code
+COPY --from=builder /app/apps/web/dist ./apps/web/dist
+COPY server/ ./server/
 
-CMD ["nginx", "-g", "daemon off;"]
+# Create persistent data volume directory
+RUN mkdir -p /app/data
+
+VOLUME /app/data
+
+EXPOSE 3000
+
+CMD ["node", "server/index.js"]

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useStore, useEditorStore } from '../storeContext';
+import { useStore, useEditorStore, useSyncStatus } from '../storeContext';
 import {
   createModel,
   createEndpoint,
@@ -60,6 +60,7 @@ export const TopBar: React.FC<Props> = ({
   const activeBoardId = useStore((s) => s.activeBoardId);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
+  const { status: syncStatus, userCount } = useSyncStatus();
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -456,6 +457,46 @@ export const TopBar: React.FC<Props> = ({
 
       {/* Right: Actions, Undo/Redo, Persistence & Theme Toggle */}
       <div className="flex items-center gap-2">
+        {/* Live Realtime Server Sync Status */}
+        <div
+          className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all select-none ${
+            syncStatus === 'connected'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+              : syncStatus === 'connecting'
+              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+              : 'bg-slate-100 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+          }`}
+          title={
+            syncStatus === 'connected'
+              ? `Live mit dem Server synchronisiert! ${userCount} Benutzer online. Jede Änderung wird sofort live übertragen.`
+              : syncStatus === 'connecting'
+              ? 'Verbindung zum Live-Server wird hergestellt...'
+              : 'Lokal (Server nicht erreichbar, Änderungen werden lokal zwischengespeichert)'
+          }
+        >
+          <span className="relative flex h-2 w-2">
+            {syncStatus === 'connected' && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            )}
+            <span
+              className={`relative inline-flex rounded-full h-2 w-2 ${
+                syncStatus === 'connected'
+                  ? 'bg-emerald-500'
+                  : syncStatus === 'connecting'
+                  ? 'bg-amber-500 animate-pulse'
+                  : 'bg-slate-400'
+              }`}
+            />
+          </span>
+          <span className="text-[11px] font-medium tracking-tight">
+            {syncStatus === 'connected'
+              ? `Live (${userCount})`
+              : syncStatus === 'connecting'
+              ? 'Verbinden...'
+              : 'Lokal'}
+          </span>
+        </div>
+
         {/* Undo / Redo */}
         <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
           <button

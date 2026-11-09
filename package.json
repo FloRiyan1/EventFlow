@@ -8,6 +8,8 @@
     "apps/*"
   ],
   "scripts": {
+    "start": "node server/index.js",
+    "server": "node server/index.js",
     "dev": "npm run dev -w @eventflow/web",
     "build": "npm run build -w @eventflow/web",
     "preview": "npm run preview -w @eventflow/web",
@@ -22,7 +24,11 @@
     "@playwright/test": "^1.48.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.18.2",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.22.2"
   }
 }
